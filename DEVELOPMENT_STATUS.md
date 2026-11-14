@@ -6,6 +6,16 @@ Last updated: 2026-11-14
 Phase 1 built successfully on GitHub Actions (confirmed by the user, 2026-11-14).
 **Phase 2 code is written but NOT yet compiled or tested.** The next GitHub Actions run is its first check (it runs the unit tests before building the APK).
 
+## Phase 3: MACD engine (written 2026-11-14, NOT yet compiled)
+- `strategy/Macd.kt`: EMA (seeded with simple average), MACD 12/26/9, crossover rules exactly as in the spec.
+- `strategy/SignalEvaluator.kt`: closed candles only; needs 87 candles warm-up; blocks signals on gaps/invalid prices; a signal is `actionable` only if its candle is new (not processed before) AND closed less than one timeframe ago. Stale signals are displayed but never traded.
+- `strategy/SignalService.kt`: fetches 200 candles, saves signal + last-processed-candle cursor in one DB transaction; unique index prevents two signals for the same candle.
+- Room DB is now v2 with `fallbackToDestructiveMigration` (acceptable only while no financial data is stored; MUST be replaced by real migrations in Phase 4).
+- Dashboard: MACD signal card (BUY/SELL/HOLD, MACD, signal line, histogram, last signal, timeframe 15m), re-evaluated shortly after each candle close while the app is open.
+- Timeframe is fixed at 15m for now; the Settings option comes with the bot configuration.
+- The test expectations were cross-checked with an independent Python version of the same math (EMA values, buy/sell crossovers on a test wave).
+- Doubts: candle `Time` is assumed to be the open time; if live candles look shifted by one, the freshness check needs adjusting.
+
 ## Phase 2: Indodax API (written 2026-11-14, unverified)
 - `api/IndodaxClient`: OkHttp, HTTPS only, timeouts, rate gate. Public: ticker, candles. Signed reads: account, openOrders, order (by id or clientOrderId), testConnection. **No order placement or cancel yet (Phase 6).**
 - `api/Signer`: HMAC-SHA256 hex over the exact query string that is sent.

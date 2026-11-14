@@ -25,6 +25,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.indodaxbot.api.ApiResult
 import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.api.MarketSnapshot
+import com.indodaxbot.strategy.SignalService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -66,9 +68,10 @@ private fun percent(p: Double): String = String.format(Locale("id", "ID"), "%+.2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(client: IndodaxClient) {
+fun DashboardScreen(client: IndodaxClient, signalService: SignalService) {
     var state by remember { mutableStateOf(PriceState()) }
     var refreshing by remember { mutableStateOf(false) }
+    var signalTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
     suspend fun load() {
@@ -91,7 +94,10 @@ fun DashboardScreen(client: IndodaxClient) {
 
     PullToRefreshBox(
         isRefreshing = refreshing,
-        onRefresh = { scope.launch { load() } },
+        onRefresh = {
+            signalTick++
+            scope.launch { load() }
+        },
         modifier = Modifier.fillMaxSize()
     ) {
         Column(
@@ -100,6 +106,7 @@ fun DashboardScreen(client: IndodaxClient) {
         ) {
             Text("Dashboard", style = MaterialTheme.typography.titleLarge)
             PriceCard(state.snapshot)
+            SignalsSection(signalService, signalTick)
 
             val footer = buildString {
                 if (state.updatedAtMs > 0) {

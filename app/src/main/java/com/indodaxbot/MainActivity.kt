@@ -19,7 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.indodaxbot.api.IndodaxClient
+import com.indodaxbot.data.AppDatabase
 import com.indodaxbot.security.CredentialStore
+import com.indodaxbot.strategy.SignalService
 import com.indodaxbot.ui.DashboardScreen
 import com.indodaxbot.ui.SettingsScreen
 
@@ -28,14 +30,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val store = CredentialStore(applicationContext)
         val client = IndodaxClient(credentials = { store.load() })
-        setContent { MaterialTheme { AppRoot(store, client) } }
+        val signalService = SignalService(client, AppDatabase.get(applicationContext))
+        setContent { MaterialTheme { AppRoot(store, client, signalService) } }
     }
 }
 
 private val tabs = listOf("Dashboard", "Positions", "Settings")
 
 @Composable
-private fun AppRoot(store: CredentialStore, client: IndodaxClient) {
+private fun AppRoot(store: CredentialStore, client: IndodaxClient, signalService: SignalService) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
         bottomBar = {
@@ -53,7 +56,7 @@ private fun AppRoot(store: CredentialStore, client: IndodaxClient) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (selected) {
-                0 -> DashboardScreen(client)
+                0 -> DashboardScreen(client, signalService)
                 1 -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Positions (coming in Phase 4)")
                 }
