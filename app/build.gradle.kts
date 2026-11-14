@@ -56,6 +56,9 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
     implementation(libs.coroutines.android)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
+    // Android's org.json is only a stub in JVM unit tests; this is the real one.
+    testImplementation(libs.org.json)
 }

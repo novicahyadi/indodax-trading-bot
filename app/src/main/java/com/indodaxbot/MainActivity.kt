@@ -11,24 +11,31 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.indodaxbot.api.IndodaxClient
+import com.indodaxbot.security.CredentialStore
+import com.indodaxbot.ui.DashboardScreen
+import com.indodaxbot.ui.SettingsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { AppRoot() } }
+        val store = CredentialStore(applicationContext)
+        val client = IndodaxClient(credentials = { store.load() })
+        setContent { MaterialTheme { AppRoot(store, client) } }
     }
 }
 
 private val tabs = listOf("Dashboard", "Positions", "Settings")
 
-@androidx.compose.runtime.Composable
-private fun AppRoot() {
+@Composable
+private fun AppRoot(store: CredentialStore, client: IndodaxClient) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
         bottomBar = {
@@ -44,8 +51,14 @@ private fun AppRoot() {
             }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            Text("${tabs[selected]} (skeleton)")
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when (selected) {
+                0 -> DashboardScreen(client)
+                1 -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Positions (coming in Phase 4)")
+                }
+                else -> SettingsScreen(store, client)
+            }
         }
     }
 }

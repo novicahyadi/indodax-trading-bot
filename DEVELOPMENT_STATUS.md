@@ -3,10 +3,26 @@
 Last updated: 2026-11-14
 
 ## Build status
-**NOT YET COMPILED.** No Gradle build has run. The first GitHub Actions run is the first real compile check, so expect version or syntax fixes.
+Phase 1 built successfully on GitHub Actions (confirmed by the user, 2026-11-14).
+**Phase 2 code is written but NOT yet compiled or tested.** The next GitHub Actions run is its first check (it runs the unit tests before building the APK).
+
+## Phase 2: Indodax API (written 2026-11-14, unverified)
+- `api/IndodaxClient`: OkHttp, HTTPS only, timeouts, rate gate. Public: ticker, candles. Signed reads: account, openOrders, order (by id or clientOrderId), testConnection. **No order placement or cancel yet (Phase 6).**
+- `api/Signer`: HMAC-SHA256 hex over the exact query string that is sent.
+- `api/Parsers`, `api/Candles` (closed-candle filter), `api/Models` (Credentials toString is redacted; money uses BigDecimal).
+- `security/CredentialStore`: AES-256-GCM key in Android Keystore, ciphertext only in SharedPreferences.
+- UI: Settings (save, test connection, remove, warns if the key has withdraw permission) and a Dashboard price view.
+- Tests: signer (RFC 4231 vector), query builder, parsers, closed-candle logic.
+- Retrofit was not added: OkHttp alone is enough and avoids an extra dependency.
+
+Known doubts to resolve on the first real run:
+1. The docs say HMAC-SHA256, but their sample output is 128 hex characters (SHA-512 length). If "Test API connection" returns a signature error (-1022), try SHA-512.
+2. Candle `Time` is assumed to be the candle open time.
+3. Account `balances[].asset` casing is normalized to upper case.
+4. Real order status values (partial fill) still unconfirmed.
 
 ## Phase 1: Project foundation
-Done (written, unverified):
+Done:
 - Gradle config with pinned versions: AGP 8.5.2, Kotlin 2.0.20, KSP 2.0.20-1.0.25, Gradle 8.9 (installed by the CI workflow)
 - Manifest, Compose Material 3 shell with Dashboard / Positions / Settings bottom navigation
 - Room database with one entity (BotEvent)
@@ -47,5 +63,6 @@ Public API (`https://indodax.com`):
 4. I only read the first part of INDODAX-TradeAPI-2.md (the last ~1,200 characters, the rest of the trade-history fields, were not read) and have not read the enums page, so the status values are not final.
 
 ## Next steps
-1. Push to GitHub and run the workflow; fix any compile errors.
-2. Phase 2: Retrofit/OkHttp client, HMAC signer with unit tests (use the doc's example vectors), Keystore credential storage.
+1. Upload the Phase 2 files, let the workflow run, fix any compile or test errors.
+2. Install the APK, save a read/trade key, tap "Test API connection" and report the result.
+3. Phase 3: MACD engine (EMA, MACD, crossover, duplicate-signal prevention, signal history).
