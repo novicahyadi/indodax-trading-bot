@@ -6,6 +6,18 @@ Last updated: 2026-11-14
 Phase 1 built successfully on GitHub Actions (confirmed by the user, 2026-11-14).
 **Phase 2 code is written but NOT yet compiled or tested.** The next GitHub Actions run is its first check (it runs the unit tests before building the APK).
 
+## Strategy update: multi-timeframe + zone reversal (written 2026-11-14, NOT yet compiled)
+Requested by the user (reference screenshot of another app), replaces the plain crossover as the default rule. The strategy is still MACD only.
+- Timeframes 1m, 15m, 30m, 1h, 4h, 1D, 3D, 1W: pick chips on the MACD card, then tap Apply. The applied timeframe is saved.
+- Settings: Fast EMA, Slow EMA, Signal period (validated: fast 2-99 < slow 3-100, signal 2-50), signal rule (Zone reversal or Crossover), buy zone and sell zone.
+- Zone reversal rule (on closed candles only): BUY = the signal line made a low at or below the buy zone on the previous candle and now turns up. SELL = it made a high at or above the sell zone and now turns down. The turn is confirmed one candle after the low/high, so it is never repainted.
+- Zones are in IDR (same units as the MACD values) and stored PER TIMEFRAME, because MACD size differs a lot between timeframes. Only 15m has placeholder defaults (-1,000,000 / +1,000,000); other timeframes show "zones not set" and produce no signals until set. Leaving both zones empty also means no signals.
+- Chart on the card: last 80 closed candles (candlesticks), MACD panel with MACD line (blue), signal line (orange), histogram, shaded buy/sell zones and BUY/SELL markers computed with the same rule.
+- Last processed candle is tracked per configuration (timeframe + periods + rule + zones). A TradingSignal row is still unique per pair+timeframe+candle, so changing settings and getting a different signal for the very same candle is not stored twice.
+- Preferences use SharedPreferences (no extra dependency) instead of DataStore.
+- Tests added: zone reversal cases, markers, evaluator with zones, validator, config key.
+Open points: weekly/3-day candle alignment on Indodax is unverified, the gap check may report "missing candles" for 3D/1W; suggested zones from recent data are not built yet.
+
 ## Phase 4: Paper trading (written 2026-11-14, NOT yet compiled)
 Phase 3 was confirmed on the phone (HOLD signal, MACD - signal = histogram checks out, candle time = open time confirmed).
 - All money is exact integers: IDR as whole rupiah, BTC as satoshis (`trading/Money.kt`). No floating point in balances, fees or P/L.

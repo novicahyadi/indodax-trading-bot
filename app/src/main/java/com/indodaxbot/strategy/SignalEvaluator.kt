@@ -2,7 +2,7 @@ package com.indodaxbot.strategy
 
 import com.indodaxbot.api.Candle
 
-enum class EvalStatus { OK, INSUFFICIENT_DATA, MISSING_CANDLES, INVALID_DATA }
+enum class EvalStatus { OK, INSUFFICIENT_DATA, MISSING_CANDLES, INVALID_DATA, NOT_CONFIGURED }
 
 data class Evaluation(
     val status: EvalStatus,
@@ -13,12 +13,26 @@ data class Evaluation(
     val isNewCandle: Boolean = false,
     /** True only for a BUY/SELL on a NEW, FRESH, gap-free candle. Execution must check this. */
     val actionable: Boolean = false,
-    val note: String? = null
+    val note: String? = null,
+    /** All MACD points (oldest first), used for the chart. */
+    val points: List<MacdPoint> = emptyList()
 )
 
 object SignalEvaluator {
     /** Candles that must be contiguous at the end of the series. */
     const val GAP_CHECK_CANDLES = 60
+
+    /** Convenience overload: original MACD/signal-line crossover rule. */
+    fun evaluate(
+        closed: List<Candle>,
+        tfSeconds: Long,
+        nowSec: Long,
+        lastProcessedSec: Long?,
+        params: MacdParams = MacdParams()
+    ): Evaluation = evaluate(
+        closed, tfSeconds, nowSec, lastProcessedSec,
+        StrategyConfig(timeframe = "", macd = params, mode = StrategyMode.CROSSOVER)
+    )
 
     /**
      * [closed] must contain CLOSED candles only, oldest first (use Candles.closedOnly).
@@ -29,8 +43,9 @@ object SignalEvaluator {
         tfSeconds: Long,
         nowSec: Long,
         lastProcessedSec: Long?,
-        params: MacdParams = MacdParams()
+        cfg: StrategyConfig
     ): Evaluation {
+        val params = cfg.macd
         if (closed.any { !it.close.isFinite() || it.close <= 0.0 }) {
             return Evaluation(EvalStatus.INVALID_DATA, note = "Invalid candle data")
         }
@@ -44,14 +59,22 @@ object SignalEvaluator {
             return Evaluation(EvalStatus.MISSING_CANDLES, note = "Missing candles in recent data")
         }
         val points = Macd.compute(closed, params)
-        if (points.size < 2) {
+        if (points.size < 3) {
             return Evaluation(EvalStatus.INSUFFICIENT_DATA, note = "Not enough MACD points")
         }
         val latest = points.last()
-        val prev = points[points.size - 2]
-        val type = Crossover.detect(prev, latest)
+        if (cfg.mode == StrategyMode.ZONE_REVERSAL && !cfg.zonesSet) {
+            return Evaluation(
+                status = EvalStatus.NOT_CONFIGURED,
+                latest = latest,
+                latestClose = closed.last().close,
+                note = "Set the buy and sell zone for this timeframe in Settings",
+                points = points
+            )
+        }
+        val type = Strategy.detect(points, cfg)
         val isNew = lastProcessedSec == null || latest.timeSec > lastProcessedSec
-        // Fresh = the signal candle closed less than one timeframe ago. Stale crossovers are shown, never traded.
+        // Fresh = the signal candle closed less than one timeframe ago. Stale signals are shown, never traded.
         val closedAtSec = latest.timeSec + tfSeconds
         val fresh = nowSec - closedAtSec < tfSeconds
         return Evaluation(
@@ -61,7 +84,8 @@ object SignalEvaluator {
             latestClose = closed.last().close,
             isNewCandle = isNew,
             actionable = isNew && fresh && type != SignalType.HOLD,
-            note = if (type != SignalType.HOLD && isNew && !fresh) "Signal is stale, not actionable" else null
+            note = if (type != SignalType.HOLD && isNew && !fresh) "Signal is stale, not actionable" else null,
+            points = points
         )
     }
 

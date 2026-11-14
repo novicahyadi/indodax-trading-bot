@@ -25,13 +25,31 @@ import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.security.CredentialStore
 import com.indodaxbot.trading.PaperBroker
 import com.indodaxbot.trading.PaperResult
+import com.indodaxbot.strategy.MacdParams
+import com.indodaxbot.strategy.StrategyMode
+import com.indodaxbot.strategy.StrategyStore
+import com.indodaxbot.strategy.StrategyValidator
+import com.indodaxbot.strategy.Timeframes
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(store: CredentialStore, client: IndodaxClient, broker: PaperBroker) {
+fun SettingsScreen(
+    store: CredentialStore, client: IndodaxClient, broker: PaperBroker, strategyStore: StrategyStore
+) {
+    val cfg by strategyStore.config.collectAsState()
+    var fastTxt by remember(cfg.macd) { mutableStateOf(cfg.macd.fast.toString()) }
+    var slowTxt by remember(cfg.macd) { mutableStateOf(cfg.macd.slow.toString()) }
+    var sigTxt by remember(cfg.macd) { mutableStateOf(cfg.macd.signal.toString()) }
+    var modeSel by remember(cfg.mode) { mutableStateOf(cfg.mode) }
+    var buyTxt by remember(cfg.timeframe, cfg.buyZone) { mutableStateOf(zoneText(cfg.buyZone)) }
+    var sellTxt by remember(cfg.timeframe, cfg.sellZone) { mutableStateOf(zoneText(cfg.sellZone)) }
+    var stratMsg by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var apiSecret by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(store.hasCredentials()) }
@@ -110,6 +128,82 @@ fun SettingsScreen(store: CredentialStore, client: IndodaxClient, broker: PaperB
         ) { Text("Remove credentials") }
 
         HorizontalDivider()
+        Text("MACD strategy", style = MaterialTheme.typography.titleLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = fastTxt, onValueChange = { fastTxt = it.filter(Char::isDigit) },
+                label = { Text("Fast EMA") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = slowTxt, onValueChange = { slowTxt = it.filter(Char::isDigit) },
+                label = { Text("Slow EMA") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = sigTxt, onValueChange = { sigTxt = it.filter(Char::isDigit) },
+                label = { Text("Signal") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Text("Signal rule", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = modeSel == StrategyMode.ZONE_REVERSAL,
+                onClick = { modeSel = StrategyMode.ZONE_REVERSAL },
+                label = { Text("Zone reversal") }
+            )
+            FilterChip(
+                selected = modeSel == StrategyMode.CROSSOVER,
+                onClick = { modeSel = StrategyMode.CROSSOVER },
+                label = { Text("Crossover") }
+            )
+        }
+        Text(
+            "Zone reversal: BUY when the signal line reverses upward after touching the buy zone, SELL when it reverses downward after touching the sell zone. Crossover: BUY/SELL when MACD crosses the signal line.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            "Zones for ${Timeframes.label(cfg.timeframe)} (in IDR, same units as the MACD values on the chart). Each timeframe has its own zones because MACD values differ a lot between timeframes.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = buyTxt, onValueChange = { buyTxt = it.filter { c -> c.isDigit() || c == '-' || c == '.' } },
+            label = { Text("Buy zone: signal line at or below") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = sellTxt, onValueChange = { sellTxt = it.filter { c -> c.isDigit() || c == '-' || c == '.' } },
+            label = { Text("Sell zone: signal line at or above") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = {
+                val bothEmpty = buyTxt.isBlank() && sellTxt.isBlank()
+                val f = fastTxt.toIntOrNull()
+                val sl = slowTxt.toIntOrNull()
+                val sg = sigTxt.toIntOrNull()
+                val b = buyTxt.trim().toDoubleOrNull()
+                val z = sellTxt.trim().toDoubleOrNull()
+                val err = StrategyValidator.validate(f, sl, sg, b, z, zonesText = !bothEmpty)
+                if (err != null) {
+                    stratMsg = err
+                } else {
+                    strategyStore.saveSettings(
+                        MacdParams(f!!, sl!!, sg!!), modeSel,
+                        if (bothEmpty) null else b, if (bothEmpty) null else z
+                    )
+                    stratMsg = "Saved and applied to the Dashboard."
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Save strategy settings") }
+        if (stratMsg.isNotEmpty()) Text(stratMsg, style = MaterialTheme.typography.bodyMedium)
+
+        HorizontalDivider()
         Text("Paper trading", style = MaterialTheme.typography.titleLarge)
         Text(
             "Simulated account using real prices. It never sends real orders and is completely separate from live data.",
@@ -143,3 +237,6 @@ fun SettingsScreen(store: CredentialStore, client: IndodaxClient, broker: PaperB
         if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
     }
 }
+
+private fun zoneText(v: Double?): String =
+    if (v == null) "" else if (v == Math.rint(v)) v.toLong().toString() else v.toString()

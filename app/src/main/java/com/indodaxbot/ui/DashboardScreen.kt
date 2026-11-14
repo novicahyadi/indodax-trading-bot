@@ -41,6 +41,7 @@ import com.indodaxbot.api.ApiResult
 import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.api.MarketSnapshot
 import com.indodaxbot.strategy.SignalService
+import com.indodaxbot.strategy.StrategyStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -68,7 +69,7 @@ private fun percent(p: Double): String = String.format(Locale("id", "ID"), "%+.2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(client: IndodaxClient, signalService: SignalService) {
+fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strategyStore: StrategyStore) {
     var state by remember { mutableStateOf(PriceState()) }
     var refreshing by remember { mutableStateOf(false) }
     var signalTick by remember { mutableIntStateOf(0) }
@@ -106,7 +107,7 @@ fun DashboardScreen(client: IndodaxClient, signalService: SignalService) {
         ) {
             Text("Dashboard", style = MaterialTheme.typography.titleLarge)
             PriceCard(state.snapshot)
-            SignalsSection(signalService, signalTick)
+            SignalsSection(signalService, strategyStore, signalTick)
 
             val footer = buildString {
                 if (state.updatedAtMs > 0) {

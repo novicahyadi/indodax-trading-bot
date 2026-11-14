@@ -1,19 +1,24 @@
 package com.indodaxbot.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,10 +30,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.indodaxbot.api.ApiResult
+import com.indodaxbot.api.Candles
 import com.indodaxbot.strategy.EvalStatus
 import com.indodaxbot.strategy.SignalService
 import com.indodaxbot.strategy.SignalSnapshot
 import com.indodaxbot.strategy.SignalType
+import com.indodaxbot.strategy.StrategyMode
+import com.indodaxbot.strategy.StrategyStore
+import com.indodaxbot.strategy.Timeframes
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -53,16 +62,19 @@ private fun dateTime(ms: Long): String =
     SimpleDateFormat("dd MMM HH:mm", Locale("id", "ID")).format(Date(ms))
 
 /**
- * Evaluates the MACD signal right after every candle close while the screen is open.
+ * Evaluates the active strategy right after every candle close while the screen is open.
  * (Continuous background evaluation arrives with the Foreground Service in Phase 5.)
- * Changing [refreshTick] (pull-to-refresh) restarts the loop immediately.
+ * The loop restarts when the configuration changes or when [refreshTick] changes (pull-to-refresh).
  */
 @Composable
-fun SignalsSection(service: SignalService, refreshTick: Int) {
+fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: Int) {
+    val config by store.config.collectAsState()
     var snap by remember { mutableStateOf<SignalSnapshot?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Timeframe the user has picked but not applied yet.
+    var pendingTf by remember(config.timeframe) { mutableStateOf(config.timeframe) }
 
-    LaunchedEffect(refreshTick) {
+    LaunchedEffect(refreshTick, config) {
         while (true) {
             var waitMs: Long
             when (val r = service.refresh()) {
@@ -70,7 +82,7 @@ fun SignalsSection(service: SignalService, refreshTick: Int) {
                     snap = r.value
                     error = null
                     val now = System.currentTimeMillis()
-                    val tf = service.timeframeMs
+                    val tf = (Candles.timeframeSeconds(r.value.config.timeframe) ?: 900L) * 1000L
                     waitMs = (now / tf + 1) * tf + CANDLE_CLOSE_DELAY_MS - now
                 }
                 is ApiResult.Failure -> {
@@ -82,7 +94,8 @@ fun SignalsSection(service: SignalService, refreshTick: Int) {
         }
     }
 
-    val s = snap
+    // Show the snapshot only if it belongs to the applied configuration (avoids stale numbers after Apply).
+    val s = snap?.takeIf { it.config == config }
     val eval = s?.evaluation
     val type = eval?.type ?: SignalType.HOLD
     val sigColor = when (type) {
@@ -97,17 +110,35 @@ fun SignalsSection(service: SignalService, refreshTick: Int) {
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("MACD Signal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    "${service.timeframe}m",
+                    Timeframes.label(config.timeframe),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(horizontal = 10.dp, vertical = 3.dp)
                 )
+            }
+
+            // Timeframe picker + Apply
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Timeframes.all.forEach { tf ->
+                    FilterChip(
+                        selected = pendingTf == tf,
+                        onClick = { pendingTf = tf },
+                        label = { Text(Timeframes.label(tf)) }
+                    )
+                }
+            }
+            Button(
+                enabled = pendingTf != config.timeframe,
+                onClick = { store.applyTimeframe(pendingTf) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (pendingTf != config.timeframe) "Apply ${Timeframes.label(pendingTf)}" else "Applied")
             }
 
             Text(
@@ -130,16 +161,38 @@ fun SignalsSection(service: SignalService, refreshTick: Int) {
                 )
             }
 
+            if (s != null && eval != null && eval.points.isNotEmpty()) {
+                MacdChart(s.chartCandles, eval.points, config, Modifier.fillMaxWidth())
+            } else if (eval == null) {
+                Text("Loading chart…", style = MaterialTheme.typography.bodySmall)
+            }
+
             HorizontalDivider()
+
+            Text(
+                "Strategy: " + when (config.mode) {
+                    StrategyMode.ZONE_REVERSAL -> "signal-line reversal in zones"
+                    StrategyMode.CROSSOVER -> "MACD / signal crossover"
+                } + "  ·  MACD ${config.macd.fast}, ${config.macd.slow}, ${config.macd.signal}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (config.mode == StrategyMode.ZONE_REVERSAL) {
+                Text(
+                    if (config.zonesSet) "BUY zone ≤ ${num(config.buyZone)}   ·   SELL zone ≥ ${num(config.sellZone)}"
+                    else "Zones not set for ${Timeframes.label(config.timeframe)} (Settings)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (config.zonesSet) MaterialTheme.colorScheme.onSurfaceVariant else SigRed
+                )
+            }
 
             val last = s?.lastSignal
             Text(
-                if (last != null) "Last signal: ${last.type} · ${dateTime(last.candleTimeSec * 1000 + 0)}"
+                if (last != null) "Last signal: ${last.type} · ${dateTime(last.candleTimeSec * 1000)}"
                 else "No BUY/SELL signal recorded yet",
                 style = MaterialTheme.typography.bodyMedium
             )
             eval?.latest?.let {
-                val tfSec = service.timeframeMs / 1000
+                val tfSec = Candles.timeframeSeconds(config.timeframe) ?: 900L
                 Text(
                     "Based on candle closed ${dateTime((it.timeSec + tfSec) * 1000)}",
                     style = MaterialTheme.typography.bodySmall,

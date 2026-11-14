@@ -22,6 +22,7 @@ import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.data.AppDatabase
 import com.indodaxbot.security.CredentialStore
 import com.indodaxbot.strategy.SignalService
+import com.indodaxbot.strategy.StrategyStore
 import com.indodaxbot.trading.PaperBroker
 import com.indodaxbot.ui.DashboardScreen
 import com.indodaxbot.ui.PositionsScreen
@@ -33,9 +34,10 @@ class MainActivity : ComponentActivity() {
         val store = CredentialStore(applicationContext)
         val client = IndodaxClient(credentials = { store.load() })
         val db = AppDatabase.get(applicationContext)
-        val signalService = SignalService(client, db)
+        val strategyStore = StrategyStore(applicationContext)
+        val signalService = SignalService(client, db, config = { strategyStore.current })
         val broker = PaperBroker(db)
-        setContent { MaterialTheme { AppRoot(store, client, signalService, broker) } }
+        setContent { MaterialTheme { AppRoot(store, client, signalService, broker, strategyStore) } }
     }
 }
 
@@ -43,7 +45,8 @@ private val tabs = listOf("Dashboard", "Positions", "Settings")
 
 @Composable
 private fun AppRoot(
-    store: CredentialStore, client: IndodaxClient, signalService: SignalService, broker: PaperBroker
+    store: CredentialStore, client: IndodaxClient, signalService: SignalService, broker: PaperBroker,
+    strategyStore: StrategyStore
 ) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
@@ -62,9 +65,9 @@ private fun AppRoot(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (selected) {
-                0 -> DashboardScreen(client, signalService)
+                0 -> DashboardScreen(client, signalService, strategyStore)
                 1 -> PositionsScreen(client, broker)
-                else -> SettingsScreen(store, client, broker)
+                else -> SettingsScreen(store, client, broker, strategyStore)
             }
         }
     }
