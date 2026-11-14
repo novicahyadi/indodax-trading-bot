@@ -6,7 +6,23 @@ Last updated: 2026-11-14
 Phase 1 built successfully on GitHub Actions (confirmed by the user, 2026-11-14).
 **Phase 2 code is written but NOT yet compiled or tested.** The next GitHub Actions run is its first check (it runs the unit tests before building the APK).
 
-## Phase 3: MACD engine (written 2026-11-14, NOT yet compiled)
+## Phase 4: Paper trading (written 2026-11-14, NOT yet compiled)
+Phase 3 was confirmed on the phone (HOLD signal, MACD - signal = histogram checks out, candle time = open time confirmed).
+- All money is exact integers: IDR as whole rupiah, BTC as satoshis (`trading/Money.kt`). No floating point in balances, fees or P/L.
+- `trading/PositionMath.kt`: weighted average entry, realized P/L (average-cost, buy fees included in cost), unrealized P/L valued at the bid minus estimated sell fee, P/L from the first partial fill. OPEN/CLOSED and FILLING/HOLDING are derived from quantities, independent of order states.
+- `trading/OrderStateMachine.kt`: CREATED, SUBMITTED, OPEN, PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELLED, REJECTED, FAILED with enforced transitions.
+- `trading/PaperBroker.kt`: market buy/sell, limit buy/sell (fill when the market crosses; partial fills in 50% steps), cancel, reserved IDR/BTC, no sell above available BTC, minimum order Rp50,000. Each operation is one DB transaction. PAPER data is stored with `mode = PAPER` and every query filters on it.
+- Room DB v3: Position, TradingOrder (unique client order id), TradeExecution, PaperBalance with foreign keys and indexes. Versions 1-2 may be wiped; from v3 on a schema change needs a real Migration (Room will refuse to open otherwise).
+- UI: Positions screen (cards, badges, expandable orders, ALL/OPEN/CLOSED filters, required sorting) with temporary paper test buttons; Settings has the paper balance reset (two taps to confirm).
+- Limit orders are only matched while the Positions screen is open (30 s). Real background matching comes with the Foreground Service in Phase 5.
+
+Known gaps / honest limits:
+1. Fee rates are placeholders (taker 0.51%, maker 0.30%) and fees are charged in IDR; real Indodax may charge in the received asset. Compare with a real trade history before trusting P/L.
+2. Not done yet: PaperTransaction table (executions serve as history for now), Portfolio snapshots and the 24 h / daily / all-time portfolio summary (all-time realized query exists), TP/SL fields are stored but nothing sets them yet, MACD signals do not trigger paper trades yet (Phase 5).
+3. A tiny leftover amount below Rp50,000 cannot be sold (same rule as the exchange) and keeps a position open.
+4. Paper-broker database operations have no automated tests yet (they need a device or Robolectric); the pure math and state machine do.
+
+## Phase 3: MACD engine (written 2026-11-14, built and confirmed on phone)
 - `strategy/Macd.kt`: EMA (seeded with simple average), MACD 12/26/9, crossover rules exactly as in the spec.
 - `strategy/SignalEvaluator.kt`: closed candles only; needs 87 candles warm-up; blocks signals on gaps/invalid prices; a signal is `actionable` only if its candle is new (not processed before) AND closed less than one timeframe ago. Stale signals are displayed but never traded.
 - `strategy/SignalService.kt`: fetches 200 candles, saves signal + last-processed-candle cursor in one DB transaction; unique index prevents two signals for the same candle.

@@ -6,13 +6,17 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [BotEvent::class, TradingSignal::class, SignalCursor::class],
-    version = 2,
+    entities = [
+        BotEvent::class, TradingSignal::class, SignalCursor::class,
+        Position::class, TradingOrder::class, TradeExecution::class, PaperBalance::class
+    ],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun botEventDao(): BotEventDao
     abstract fun signalDao(): SignalDao
+    abstract fun tradingDao(): TradingDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -21,9 +25,10 @@ abstract class AppDatabase : RoomDatabase() {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, AppDatabase::class.java, "indodax_bot.db"
             )
-                // TEMPORARY: the database holds no financial data yet. Before Phase 4 stores
-                // positions/orders this MUST be replaced with explicit migrations.
-                .fallbackToDestructiveMigration()
+                // Versions 1 and 2 held no financial data, so they may be wiped. From version 3 on
+                // financial records exist: any further schema change MUST ship an explicit Migration.
+                // Without one Room refuses to open the database instead of silently deleting it.
+                .fallbackToDestructiveMigrationFrom(1, 2)
                 .build()
                 .also { instance = it }
         }

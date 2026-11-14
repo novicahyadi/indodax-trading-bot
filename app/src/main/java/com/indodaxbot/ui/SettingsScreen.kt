@@ -23,15 +23,22 @@ import androidx.compose.ui.unit.dp
 import com.indodaxbot.api.ApiResult
 import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.security.CredentialStore
+import com.indodaxbot.trading.PaperBroker
+import com.indodaxbot.trading.PaperResult
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(store: CredentialStore, client: IndodaxClient) {
+fun SettingsScreen(store: CredentialStore, client: IndodaxClient, broker: PaperBroker) {
     var apiKey by remember { mutableStateOf("") }
     var apiSecret by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(store.hasCredentials()) }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var paperIdr by remember { mutableStateOf("10000000") }
+    var confirmReset by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Column(
@@ -101,6 +108,37 @@ fun SettingsScreen(store: CredentialStore, client: IndodaxClient) {
             onClick = { store.clear(); saved = false; status = "Credentials removed." },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Remove credentials") }
+
+        HorizontalDivider()
+        Text("Paper trading", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "Simulated account using real prices. It never sends real orders and is completely separate from live data.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = paperIdr, onValueChange = { paperIdr = it.filter(Char::isDigit); confirmReset = false },
+            label = { Text("Initial demo balance (IDR)") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedButton(
+            enabled = (paperIdr.toLongOrNull() ?: 0L) >= 100_000L,
+            onClick = {
+                if (!confirmReset) {
+                    confirmReset = true
+                    status = "Tap again to confirm: this deletes ALL paper positions and orders."
+                } else {
+                    confirmReset = false
+                    scope.launch {
+                        status = when (val r = broker.resetAccount(paperIdr.toLong())) {
+                            is PaperResult.Ok -> r.message
+                            is PaperResult.Rejected -> "Rejected: ${r.reason}"
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (confirmReset) "Confirm reset" else "Reset paper account") }
 
         if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
     }
