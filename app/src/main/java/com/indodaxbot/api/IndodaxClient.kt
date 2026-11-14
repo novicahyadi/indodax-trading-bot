@@ -35,6 +35,10 @@ class IndodaxClient(
     suspend fun ticker(pairId: String = "btcidr"): ApiResult<Ticker> =
         getPublic("/api/ticker/$pairId").then { Parsers.parseTicker(it) }
 
+    /** Ticker plus 24h change in one call (uses /api/summaries). [tickerId] looks like "btc_idr". */
+    suspend fun snapshot(tickerId: String = "btc_idr"): ApiResult<MarketSnapshot> =
+        getPublic("/api/summaries").then { Parsers.parseSummary(it, tickerId) }
+
     /** Candles for [symbol] (e.g. "BTCIDR") covering roughly the last [count] candles; may include the still-forming one. */
     suspend fun candles(symbol: String, tf: String, count: Int): ApiResult<List<Candle>> {
         val tfSec = Candles.timeframeSeconds(tf)

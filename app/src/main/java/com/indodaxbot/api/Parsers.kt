@@ -23,6 +23,26 @@ object Parsers {
         return s.toBigDecimalOrNull() ?: BigDecimal.ZERO
     }
 
+    /**
+     * Parses /api/summaries: ticker data for [tickerId] (e.g. "btc_idr") plus the 24h change
+     * computed from "prices_24h" (the price 24 hours ago). change is null if that price is missing.
+     */
+    fun parseSummary(body: String, tickerId: String = "btc_idr"): ApiResult<MarketSnapshot> {
+        val o = obj(body) ?: return malformed("summaries")
+        apiError(o)?.let { return it }
+        val t = o.optJSONObject("tickers")?.optJSONObject(tickerId) ?: return malformed("summaries")
+        val ticker = Ticker(dec(t, "last"), dec(t, "buy"), dec(t, "sell"), dec(t, "high"), dec(t, "low"))
+        val key = tickerId.replace("_", "")
+        val prev = o.optJSONObject("prices_24h")?.optString(key, "")?.trim()?.toBigDecimalOrNull()
+        val change = if (prev != null && prev.signum() > 0) {
+            ticker.last.subtract(prev)
+                .divide(prev, 6, java.math.RoundingMode.HALF_UP)
+                .multiply(BigDecimal(100))
+                .toDouble()
+        } else null
+        return ApiResult.Success(MarketSnapshot(ticker, change))
+    }
+
     fun parseTicker(body: String): ApiResult<Ticker> {
         val t = obj(body)?.optJSONObject("ticker") ?: return malformed("ticker")
         return ApiResult.Success(
