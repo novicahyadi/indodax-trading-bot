@@ -16,8 +16,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-
       # Installs the pinned Gradle version, so no gradle-wrapper.jar is needed
       # in the repo while developing from a phone.
       - uses: gradle/actions/setup-gradle@v4
