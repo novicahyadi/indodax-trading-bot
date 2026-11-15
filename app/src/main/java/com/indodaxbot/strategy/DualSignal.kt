@@ -71,7 +71,29 @@ object DualSignal {
     fun detect(n: List<NormPoint>, cfg: StrategyConfig): SignalType =
         if (n.isEmpty()) SignalType.HOLD else detectAt(n, n.size - 1, cfg)
 
-    /** Historical BUY/SELL points (index into [n]) for the chart. */
+    /** Strategy 1 BUY/SELL points (index into [n]); empty when strategy 1 is off. */
+    fun reversalMarkers(n: List<NormPoint>, cfg: StrategyConfig): List<Pair<Int, SignalType>> {
+        if (!cfg.enableReversal) return emptyList()
+        val out = ArrayList<Pair<Int, SignalType>>()
+        for (i in 2 until n.size) {
+            val t = reversalAt(n, i, cfg)
+            if (t != SignalType.HOLD) out.add(i to t)
+        }
+        return out
+    }
+
+    /** Strategy 2 BUY/SELL points (index into [n]); empty when strategy 2 is off. */
+    fun crossoverMarkers(n: List<NormPoint>, cfg: StrategyConfig): List<Pair<Int, SignalType>> {
+        if (!cfg.enableCrossover) return emptyList()
+        val out = ArrayList<Pair<Int, SignalType>>()
+        for (i in 1 until n.size) {
+            val t = crossoverAt(n, i, cfg).type
+            if (t != SignalType.HOLD) out.add(i to t)
+        }
+        return out
+    }
+
+    /** Historical combined BUY/SELL points (index into [n]), following the AND/OR rule. */
     fun markers(n: List<NormPoint>, cfg: StrategyConfig): List<Pair<Int, SignalType>> {
         val out = ArrayList<Pair<Int, SignalType>>()
         for (i in 1 until n.size) {

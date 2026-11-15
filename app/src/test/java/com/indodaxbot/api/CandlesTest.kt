@@ -11,7 +11,10 @@ class CandlesTest {
     fun timeframeSeconds_knownAndUnknown() {
         assertEquals(900L, Candles.timeframeSeconds("15"))
         assertEquals(86400L, Candles.timeframeSeconds("1D"))
-        assertNull(Candles.timeframeSeconds("5"))
+        assertEquals(300L, Candles.timeframeSeconds("5"))
+        assertNull(Candles.timeframeSeconds("7"))
+        // 30 s into a 1m candle: 30 s to the close + 20 s grace
+        assertEquals(50_000L, Candles.msUntilNextClose(60L, 60_000_000L + 30_000L, 20_000L))
     }
 
     @Test

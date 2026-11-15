@@ -24,7 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.indodaxbot.api.Candles
+import com.indodaxbot.strategy.Timeframes
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,7 +53,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private const val AUTO_REFRESH_MS = 15 * 60 * 1000L
+private const val PRICE_GRACE_MS = 20_000L   // same small wait after a candle closes as the signal card
 
 private val Green = Color(0xFF1B8A4B)
 private val Red = Color(0xFFC62828)
@@ -73,6 +76,7 @@ fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strateg
     var state by remember { mutableStateOf(PriceState()) }
     var refreshing by remember { mutableStateOf(false) }
     var signalTick by remember { mutableIntStateOf(0) }
+    val strategy by strategyStore.config.collectAsState()
     val scope = rememberCoroutineScope()
 
     suspend fun load() {
@@ -85,11 +89,12 @@ fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strateg
         refreshing = false
     }
 
-    // Load on open, then every 15 minutes while the screen is alive.
-    LaunchedEffect(Unit) {
+    // Load on open, then right after every candle close of the chosen timeframe (same rhythm as the signal card).
+    LaunchedEffect(strategy.timeframe) {
+        val tfSec = Candles.timeframeSeconds(strategy.timeframe) ?: 900L
         while (true) {
             load()
-            delay(AUTO_REFRESH_MS)
+            delay(Candles.msUntilNextClose(tfSec, System.currentTimeMillis(), PRICE_GRACE_MS))
         }
     }
 
@@ -115,7 +120,7 @@ fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strateg
                     append(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(state.updatedAtMs)))
                     append("  ·  ")
                 }
-                append("Pull down to refresh. Auto-refresh every 15 min.")
+                append("Pull down to refresh. Auto-refresh at every ${Timeframes.label(strategy.timeframe)} candle close.")
             }
             Text(footer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             state.error?.let {

@@ -75,8 +75,9 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
                     snap = r.value
                     error = null
                     val now = System.currentTimeMillis()
-                    val tf = (Candles.timeframeSeconds(r.value.config.timeframe) ?: 900L) * 1000L
-                    waitMs = (now / tf + 1) * tf + CANDLE_CLOSE_DELAY_MS - now
+                    waitMs = Candles.msUntilNextClose(
+                        Candles.timeframeSeconds(r.value.config.timeframe) ?: 900L, now, CANDLE_CLOSE_DELAY_MS
+                    )
                 }
                 is ApiResult.Failure -> {
                     error = "${r.kind}: ${r.message}"
@@ -115,9 +116,12 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
                         .padding(horizontal = 10.dp, vertical = 3.dp)
                 )
             }
+            if (!config.anyEnabled) {
+                Text("OFF", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
             Text(
-                if (eval == null) "…" else type.name,
+                if (eval == null) "…" else if (!config.anyEnabled) "OFF" else type.name,
                 color = sigColor,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
@@ -130,7 +134,9 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
             Row(Modifier.fillMaxWidth()) {
                 SigValue("MACD (0-100)", num(eval?.latest?.macdNorm), Modifier.weight(1f))
                 SigValue("Signal (0-100)", num(eval?.latest?.signalNorm), Modifier.weight(1f))
-                SigValue("Cross angle", eval?.crossAngleDeg?.let { "${num(it)}°" } ?: "—", Modifier.weight(1f))
+                if (config.enableCrossover) {
+                    SigValue("Cross angle", eval?.crossAngleDeg?.let { "${num(it)}°" } ?: "—", Modifier.weight(1f))
+                }
             }
 
             if (s != null && eval != null && eval.norm.isNotEmpty()) {
@@ -142,23 +148,30 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
             HorizontalDivider()
 
             Text(
-                "MACD ${config.macd.fast}, ${config.macd.slow}, ${config.macd.signal}  ·  lookback ${config.normLookback}  ·  " +
-                    "logic ${if (config.anyEnabled) config.logicMode.name else "-"}",
+                "MACD ${config.macd.fast}, ${config.macd.slow}, ${config.macd.signal}  ·  lookback ${config.normLookback}" +
+                    if (config.enableReversal && config.enableCrossover) "  ·  logic ${config.logicMode.name}" else "",
                 style = MaterialTheme.typography.bodySmall
             )
-            Text(
-                "BUY zone ${num(config.buyZoneMin)}-${num(config.buyZoneMax)}   ·   SELL zone ${num(config.sellZoneMin)}-${num(config.sellZoneMax)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                "Reversal: ${eval?.reversal?.name ?: "OFF"}  ·  Crossover: ${eval?.crossover?.name ?: "OFF"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (config.enableReversal) {
+                Text(
+                    "BUY zone ${num(config.buyZoneMin)}-${num(config.buyZoneMax)}   ·   SELL zone ${num(config.sellZoneMin)}-${num(config.sellZoneMax)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (config.anyEnabled) {
+                Text(
+                    listOfNotNull(
+                        if (config.enableReversal) "Reversal: ${eval?.reversal?.name ?: "…"}" else null,
+                        if (config.enableCrossover) "Crossover: ${eval?.crossover?.name ?: "…"}" else null
+                    ).joinToString("  ·  "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             val last = s?.lastSignal
-            Text(
+            if (config.anyEnabled) Text(
                 if (last != null) "Last signal: ${last.type} · ${dateTime(last.candleTimeSec * 1000)}"
                 else "No BUY/SELL signal recorded yet",
                 style = MaterialTheme.typography.bodyMedium
@@ -171,7 +184,7 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (eval != null && eval.status != EvalStatus.OK) {
+            if (eval != null && eval.status != EvalStatus.OK && config.anyEnabled) {
                 Text(
                     "No signal: ${eval.note ?: eval.status.name}",
                     style = MaterialTheme.typography.bodySmall,

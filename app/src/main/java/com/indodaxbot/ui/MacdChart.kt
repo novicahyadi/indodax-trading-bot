@@ -38,6 +38,8 @@ private val MacdBlue = Color(0xFF2196F3)
 private val SignalOrange = Color(0xFFFFA000)
 private val Up = Color(0xFF1B8A4B)
 private val Down = Color(0xFFC62828)
+private val RevBuy = Color(0xFF1565C0)
+private val RevSell = Color(0xFF7B1FA2)
 private val BuyZoneColor = Color(0xFF00897B)
 private val SellZoneColor = Color(0xFF8E24AA)
 
@@ -50,14 +52,12 @@ private val SellZoneColor = Color(0xFF8E24AA)
 fun MacdChart(candles: List<Candle>, norm: List<NormPoint>, cfg: StrategyConfig, modifier: Modifier = Modifier) {
     if (candles.size < 2) return
     val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-    val markers = remember(norm, cfg) { DualSignal.markers(norm, cfg) }
     val timeToCandle = remember(candles) { candles.withIndex().associate { it.value.timeSec to it.index } }
     val pointByTime = remember(norm) { norm.associateBy { it.timeSec } }
     val shownPoints = remember(candles, pointByTime) { candles.map { pointByTime[it.timeSec] } }
     // Markers that fall inside the visible candle window: candle index -> type.
-    val visibleMarkers = remember(markers, timeToCandle, norm) {
-        markers.mapNotNull { (pi, type) -> timeToCandle[norm[pi].timeSec]?.let { it to type } }
-    }
+    val revMarkers = remember(norm, cfg, timeToCandle) { visibleMarkers(DualSignal.reversalMarkers(norm, cfg), norm, timeToCandle) }
+    val crossMarkers = remember(norm, cfg, timeToCandle) { visibleMarkers(DualSignal.crossoverMarkers(norm, cfg), norm, timeToCandle) }
     val panelHeight = 160f
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -83,11 +83,17 @@ fun MacdChart(candles: List<Candle>, norm: List<NormPoint>, cfg: StrategyConfig,
                     Size(colW * 0.6f, (bottom - top).coerceAtLeast(1.5f))
                 )
             }
-            visibleMarkers.forEach { (i, type) ->
+            crossMarkers.forEach { (i, type) ->
                 val c = candles[i]
                 val x = (i + 0.5f) * colW
                 if (type == SignalType.BUY) drawTriangle(x, y(c.low) + 10f, up = true, color = Up)
                 else drawTriangle(x, y(c.high) - 10f, up = false, color = Down)
+            }
+            revMarkers.forEach { (i, type) ->
+                val c = candles[i]
+                val x = (i + 0.5f) * colW
+                if (type == SignalType.BUY) drawTriangle(x, y(c.low) + 24f, up = true, color = RevBuy)
+                else drawTriangle(x, y(c.high) - 24f, up = false, color = RevSell)
             }
         }
 
@@ -102,10 +108,12 @@ fun MacdChart(candles: List<Candle>, norm: List<NormPoint>, cfg: StrategyConfig,
                 fun x(i: Int) = (i + 0.5f) * colW
 
                 // Zone bands first, so the lines are drawn on top of them.
-                val sellTop = y(cfg.sellZoneMax)
-                drawRect(SellZoneColor.copy(alpha = 0.22f), Offset(0f, sellTop), Size(size.width, y(cfg.sellZoneMin) - sellTop))
-                val buyTop = y(cfg.buyZoneMax)
-                drawRect(BuyZoneColor.copy(alpha = 0.22f), Offset(0f, buyTop), Size(size.width, y(cfg.buyZoneMin) - buyTop))
+                if (cfg.enableReversal) {
+                    val sellTop = y(cfg.sellZoneMax)
+                    drawRect(SellZoneColor.copy(alpha = 0.22f), Offset(0f, sellTop), Size(size.width, y(cfg.sellZoneMin) - sellTop))
+                    val buyTop = y(cfg.buyZoneMax)
+                    drawRect(BuyZoneColor.copy(alpha = 0.22f), Offset(0f, buyTop), Size(size.width, y(cfg.buyZoneMin) - buyTop))
+                }
 
                 fun line(color: Color, value: (NormPoint) -> Double) {
                     val path = Path()
@@ -121,15 +129,24 @@ fun MacdChart(candles: List<Candle>, norm: List<NormPoint>, cfg: StrategyConfig,
                 line(MacdBlue) { it.macdNorm }
                 line(SignalOrange) { it.signalNorm }
 
-                visibleMarkers.forEach { (i, type) ->
+                // Crossover arrows sit on the crossing point; reversal arrows sit on the signal line in the zone.
+                crossMarkers.forEach { (i, type) ->
                     val p = shownPoints[i] ?: return@forEach
-                    if (type == SignalType.BUY) drawTriangle(x(i), y(p.signalNorm) + 12f, up = true, color = Up)
-                    else drawTriangle(x(i), y(p.signalNorm) - 12f, up = false, color = Down)
+                    val mid = (p.macdNorm + p.signalNorm) / 2.0
+                    if (type == SignalType.BUY) drawTriangle(x(i), y(mid) + 12f, up = true, color = Up)
+                    else drawTriangle(x(i), y(mid) - 12f, up = false, color = Down)
+                }
+                revMarkers.forEach { (i, type) ->
+                    val p = shownPoints[i] ?: return@forEach
+                    if (type == SignalType.BUY) drawTriangle(x(i), y(p.signalNorm) + 12f, up = true, color = RevBuy)
+                    else drawTriangle(x(i), y(p.signalNorm) - 12f, up = false, color = RevSell)
                 }
             }
             // Band captions, centered in each band (skipped when the band is too thin to hold text).
-            BandLabel("ZONA SELL", cfg.sellZoneMin, cfg.sellZoneMax, panelHeight, SellZoneColor)
-            BandLabel("ZONA BUY", cfg.buyZoneMin, cfg.buyZoneMax, panelHeight, BuyZoneColor)
+            if (cfg.enableReversal) {
+                BandLabel("ZONA SELL", cfg.sellZoneMin, cfg.sellZoneMax, panelHeight, SellZoneColor)
+                BandLabel("ZONA BUY", cfg.buyZoneMin, cfg.buyZoneMax, panelHeight, BuyZoneColor)
+            }
             Text("100", style = MaterialTheme.typography.labelSmall, color = labelColor, modifier = Modifier.align(Alignment.TopEnd))
             Text("0", style = MaterialTheme.typography.labelSmall, color = labelColor, modifier = Modifier.align(Alignment.BottomEnd))
         }
@@ -137,11 +154,24 @@ fun MacdChart(candles: List<Candle>, norm: List<NormPoint>, cfg: StrategyConfig,
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             LegendDot(MacdBlue, "MACD")
             LegendDot(SignalOrange, "Signal")
-            LegendDot(BuyZoneColor, "Buy zone")
-            LegendDot(SellZoneColor, "Sell zone")
+            if (cfg.enableReversal) {
+                LegendDot(RevBuy, "Reversal buy")
+                LegendDot(RevSell, "Reversal sell")
+            }
+        }
+        if (cfg.enableCrossover) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                LegendDot(Up, "Crossover buy")
+                LegendDot(Down, "Crossover sell")
+            }
         }
     }
 }
+
+private fun visibleMarkers(
+    list: List<Pair<Int, SignalType>>, norm: List<NormPoint>, timeToCandle: Map<Long, Int>
+): List<Pair<Int, SignalType>> =
+    list.mapNotNull { (pi, type) -> timeToCandle[norm[pi].timeSec]?.let { it to type } }
 
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.BandLabel(

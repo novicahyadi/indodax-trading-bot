@@ -4,6 +4,7 @@ object Candles {
     /** Seconds per candle for the timeframes Indodax's history endpoint supports. */
     fun timeframeSeconds(tf: String): Long? = when (tf) {
         "1" -> 60L
+        "5" -> 300L
         "15" -> 900L
         "30" -> 1800L
         "60" -> 3600L
@@ -12,6 +13,12 @@ object Candles {
         "3D" -> 259200L
         "1W" -> 604800L
         else -> null
+    }
+
+    /** Milliseconds from [nowMs] until the next candle close of this timeframe plus [graceMs]. */
+    fun msUntilNextClose(tfSec: Long, nowMs: Long, graceMs: Long = 20_000L): Long {
+        val tf = tfSec * 1000L
+        return (nowMs / tf + 1) * tf + graceMs - nowMs
     }
 
     /**

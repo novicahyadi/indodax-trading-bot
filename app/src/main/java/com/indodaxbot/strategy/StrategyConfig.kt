@@ -2,10 +2,11 @@ package com.indodaxbot.strategy
 
 object Timeframes {
     /** Timeframe codes accepted by Indodax's history endpoint. */
-    val all = listOf("1", "15", "30", "60", "240", "1D", "3D", "1W")
+    val all = listOf("1", "5", "15", "30", "60", "240", "1D", "3D", "1W")
 
     fun label(tf: String): String = when (tf) {
         "1" -> "1m"
+        "5" -> "5m"
         "15" -> "15m"
         "30" -> "30m"
         "60" -> "1h"
@@ -77,22 +78,27 @@ object StrategyValidator {
         if (fast >= slow) return "Fast EMA must be smaller than Slow EMA"
         if (signal == null || signal !in 2..50) return "Signal period must be a whole number from 2 to 50"
         if (lookback == null || lookback !in 10..500) return "Normalization lookback must be from 10 to 500"
-        if (buyMin == null || buyMax == null || sellMin == null || sellMax == null) {
-            return "Fill all four zone values with valid numbers"
+        // Zone and threshold values only matter (and are only checked) while strategy 1 is on.
+        if (enableReversal) {
+            if (buyMin == null || buyMax == null || sellMin == null || sellMax == null) {
+                return "Fill all four zone values with valid numbers"
+            }
+            if (listOf(buyMin, buyMax, sellMin, sellMax).any { !it.isFinite() || it < 0.0 || it > 100.0 }) {
+                return "Zone values must be between 0 and 100"
+            }
+            if (buyMin >= buyMax) return "Buy zone: minimum must be lower than maximum"
+            if (sellMin >= sellMax) return "Sell zone: minimum must be lower than maximum"
+            if (buyMax >= sellMin) return "Buy zone must stay below the sell zone"
+            if (reversalThreshold == null || !reversalThreshold.isFinite() || reversalThreshold < 0.0 || reversalThreshold > 100.0) {
+                return "Reversal threshold must be from 0 to 100"
+            }
         }
-        if (listOf(buyMin, buyMax, sellMin, sellMax).any { !it.isFinite() || it < 0.0 || it > 100.0 }) {
-            return "Zone values must be between 0 and 100"
+        if (enableCrossover) {
+            if (minAngle == null || !minAngle.isFinite() || minAngle < 0.0 || minAngle > 90.0) {
+                return "Minimum crossover angle must be from 0 to 90 degrees"
+            }
         }
-        if (buyMin >= buyMax) return "Buy zone: minimum must be lower than maximum"
-        if (sellMin >= sellMax) return "Sell zone: minimum must be lower than maximum"
-        if (buyMax >= sellMin) return "Buy zone must stay below the sell zone"
-        if (reversalThreshold == null || !reversalThreshold.isFinite() || reversalThreshold < 0.0 || reversalThreshold > 100.0) {
-            return "Reversal threshold must be from 0 to 100"
-        }
-        if (minAngle == null || !minAngle.isFinite() || minAngle < 0.0 || minAngle > 90.0) {
-            return "Minimum crossover angle must be from 0 to 90 degrees"
-        }
-        if (!enableReversal && !enableCrossover) return "Switch on at least one strategy"
+        // Both strategies off is allowed: the Dashboard then shows the indicator only (status OFF).
         return null
     }
 

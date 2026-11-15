@@ -41,9 +41,6 @@ object SignalEvaluator {
         lastProcessedSec: Long?,
         cfg: StrategyConfig
     ): Evaluation {
-        if (!cfg.anyEnabled) {
-            return Evaluation(EvalStatus.NOT_CONFIGURED, note = "Switch on at least one strategy in Settings")
-        }
         if (closed.any { !it.close.isFinite() || it.close <= 0.0 }) {
             return Evaluation(EvalStatus.INVALID_DATA, note = "Invalid candle data")
         }
@@ -63,6 +60,17 @@ object SignalEvaluator {
         }
         val i = norm.size - 1
         val latest = norm[i]
+        if (!cfg.anyEnabled) {
+            // Both strategies OFF: show the indicator only, never a signal.
+            return Evaluation(
+                status = EvalStatus.NOT_CONFIGURED,
+                latestRaw = points.last(),
+                latest = latest,
+                signalCandle = closed.last(),
+                note = "Both strategies are OFF",
+                norm = norm
+            )
+        }
         val rev = if (cfg.enableReversal) DualSignal.reversalAt(norm, i, cfg) else null
         val cross = if (cfg.enableCrossover) DualSignal.crossoverAt(norm, i, cfg) else null
         val type = DualSignal.combine(rev, cross?.type, cfg.logicMode)

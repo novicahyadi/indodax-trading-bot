@@ -224,39 +224,52 @@ private fun StrategyTab(strategyStore: StrategyStore) {
             "The indicator is scaled to 0-100 over the last N candles, so the zones work for any coin.",
             style = MaterialTheme.typography.bodySmall
         )
-        Text("Zona SELL (0-100)", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DecField("Sell min", sellMin, { sellMin = it }, Modifier.weight(1f))
-            DecField("Sell max", sellMax, { sellMax = it }, Modifier.weight(1f))
-        }
-        Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
-            DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
-        }
 
         HorizontalDivider()
         Text("Strategy 1: Reversal zone", style = MaterialTheme.typography.titleMedium)
         SwitchRow("Enable reversal signal", enRev) { enRev = it }
-        DecField("Reversal threshold", revThr, { revThr = it }, Modifier.fillMaxWidth())
-        Text(
-            "Minimum bounce of the signal line (0-100 scale) after touching a zone.",
-            style = MaterialTheme.typography.bodySmall
-        )
+        if (enRev) {
+            Text("Zona SELL (0-100)", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DecField("Sell min", sellMin, { sellMin = it }, Modifier.weight(1f))
+                DecField("Sell max", sellMax, { sellMax = it }, Modifier.weight(1f))
+            }
+            Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
+                DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
+            }
+            DecField("Reversal threshold", revThr, { revThr = it }, Modifier.fillMaxWidth())
+            Text(
+                "Minimum bounce of the signal line (0-100 scale) after touching a zone.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         Text("Strategy 2: Crossover angle", style = MaterialTheme.typography.titleMedium)
         SwitchRow("Enable crossover signal", enCross) { enCross = it }
-        DecField("Minimum crossover angle (0-90°)", angle, { angle = it }, Modifier.fillMaxWidth())
-
-        Text("Signal combination", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = logic == LogicMode.AND, onClick = { logic = LogicMode.AND }, label = { Text("AND") })
-            FilterChip(selected = logic == LogicMode.OR, onClick = { logic = LogicMode.OR }, label = { Text("OR") })
+        if (enCross) {
+            DecField("Minimum crossover angle (0-90°)", angle, { angle = it }, Modifier.fillMaxWidth())
         }
-        Text(
-            "AND: both strategies must give the same signal. OR: either one is enough (if they disagree, no signal). With one strategy switched off, only the active one is used.",
-            style = MaterialTheme.typography.bodySmall
-        )
+
+        if (enRev && enCross) {
+            Text("Signal combination", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = logic == LogicMode.AND, onClick = { logic = LogicMode.AND }, label = { Text("AND") })
+                FilterChip(selected = logic == LogicMode.OR, onClick = { logic = LogicMode.OR }, label = { Text("OR") })
+            }
+            Text(
+                "AND: both strategies must give the same signal. OR: either one is enough (if they disagree, no signal).",
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else if (!enRev && !enCross) {
+            Text(
+                "Both strategies are OFF: the Dashboard shows the indicator only, with status OFF and no signals.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            Text("Only one strategy is on, so it is used alone.", style = MaterialTheme.typography.bodySmall)
+        }
 
         Button(
             onClick = {
@@ -264,12 +277,13 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                 val sl = slow.toIntOrNull()
                 val sg = sig.toIntOrNull()
                 val lb = lookback.toIntOrNull()
-                val bMin = buyMin.toDoubleOrNull()
-                val bMax = buyMax.toDoubleOrNull()
-                val sMin = sellMin.toDoubleOrNull()
-                val sMax = sellMax.toDoubleOrNull()
-                val thr = revThr.toDoubleOrNull()
-                val ang = angle.toDoubleOrNull()
+                // Hidden (disabled) strategies keep their saved values and are not validated.
+                val bMin = if (enRev) buyMin.toDoubleOrNull() else cfg.buyZoneMin
+                val bMax = if (enRev) buyMax.toDoubleOrNull() else cfg.buyZoneMax
+                val sMin = if (enRev) sellMin.toDoubleOrNull() else cfg.sellZoneMin
+                val sMax = if (enRev) sellMax.toDoubleOrNull() else cfg.sellZoneMax
+                val thr = if (enRev) revThr.toDoubleOrNull() else cfg.reversalThreshold
+                val ang = if (enCross) angle.toDoubleOrNull() else cfg.minCrossoverAngle
                 val err = StrategyValidator.validate(f, sl, sg, lb, bMin, bMax, sMin, sMax, thr, ang, enRev, enCross)
                 if (err != null) {
                     msg = err

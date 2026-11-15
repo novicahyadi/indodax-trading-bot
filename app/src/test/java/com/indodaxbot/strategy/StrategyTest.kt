@@ -130,7 +130,9 @@ class StrategyTest {
         assertNotNull(v(thr = -1.0))
         assertNotNull(v(ang = 91.0))
         assertNotNull(v(ang = Double.NaN))
-        assertNotNull(v(rev = false, cross = false))
+        assertNull(v(rev = false, cross = false))        // both OFF is allowed
+        assertNull(v(bMax = 85.0, thr = null, rev = false))   // zones ignored while strategy 1 is OFF
+        assertNull(v(ang = 91.0, cross = false))              // angle ignored while strategy 2 is OFF
     }
 
     private fun ve(
@@ -151,7 +153,15 @@ class StrategyTest {
         assertNotNull(ve(use = true, ttp = 0.0))
     }
 
+    @Test fun markers_followToggles() {
+        val n = listOf(NormPoint(0, 60.0, 10.0), NormPoint(1, 60.0, 5.0), NormPoint(2, 60.0, 8.0))
+        assertEquals(listOf(2 to SignalType.BUY), DualSignal.reversalMarkers(n, cfg))
+        assertTrue(DualSignal.reversalMarkers(n, cfg.copy(enableReversal = false)).isEmpty())
+        assertTrue(DualSignal.crossoverMarkers(n, cfg.copy(enableCrossover = false)).isEmpty())
+    }
+
     @Test fun timeframes_labels() {
+        assertEquals("5m", Timeframes.label("5"))
         assertEquals("1h", Timeframes.label("60"))
         assertTrue("1D" in Timeframes.all)
     }

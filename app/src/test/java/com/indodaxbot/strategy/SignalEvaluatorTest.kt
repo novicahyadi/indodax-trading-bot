@@ -94,6 +94,9 @@ class SignalEvaluatorTest {
         val c = cfg.copy(enableReversal = false, enableCrossover = false)
         val e = SignalEvaluator.evaluate(wave.subList(0, 120), tf, t0 + 200 * tf, null, c)
         assertEquals(EvalStatus.NOT_CONFIGURED, e.status)
+        assertTrue(e.norm.isNotEmpty())      // indicator still drawn
+        assertFalse(e.actionable)
+        assertEquals(SignalType.HOLD, e.type)
     }
 
     @Test
