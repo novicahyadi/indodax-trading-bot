@@ -6,6 +6,26 @@ Last updated: 2026-11-15
 Phase 1 built successfully on GitHub Actions (confirmed by the user, 2026-11-14).
 **Phase 2 code is written but NOT yet compiled or tested.** The next GitHub Actions run is its first check (it runs the unit tests before building the APK).
 
+## Phase 5: background bot, paper execution, portfolio summary (written 2026-11-15, NOT yet compiled)
+- `bot/BotService`: foreground service (type dataSync) with a persistent notification (status + Stop button) and a partial wake lock. START_STICKY: if the system kills it, it resumes when the user had left the bot enabled. No restart after a phone reboot.
+- `bot/BotEngine` (PAPER only): (1) refreshes the signal 20 s after each candle close and when settings change, (2) acts on each actionable signal once, (3) every 15 s fetches the price, fills paper limit orders, and runs chase-cancel, take profit and the synthetic stop loss. All activity is written to the bot_event table and shown on the Dashboard.
+- `trading/ExecutionPlanner`: pure decision logic, unit-tested. MARKET_MAKER: limit buy at the signal candle Low, chase-cancel at 0% filled, take profit once anything is filled, staged stop loss armed at fill level 1/2/3/100%, SELL signal cancels everything then limit sell at the signal High. MARKET_TAKER: market buy, market sell on SELL, optional SL/TP.
+- `SignalService.events`: an actionable signal is emitted exactly once, from whichever caller (Dashboard or bot) first sees the new candle, so opening the Dashboard can no longer "steal" a signal from the bot.
+- Order size per BUY is a new setting (Execution tab, default Rp1,000,000, minimum Rp50,000).
+- Dashboard: Trading Bot card (start/stop, status, last 6 events) and Paper Portfolio card (equity at the bid, total P/L vs start, realized today / 24 h / all time from closed trades, unrealized, win rate). Settings has a new Bot tab with the MIUI keep-alive guide and shortcuts.
+- `AppContainer`/`BotApp`: one shared set of objects for the UI and the service.
+Decisions and limits (read these):
+1. PAPER only. There is no live order code.
+2. Stop loss is synthetic (price polling every 15 s), checked against the bid. A fast move can gap past it. In real trading Indodax has no stop-limit order.
+3. If a maker limit buy at the signal Low would already be at or above the ask, the entry is SKIPPED (logged), not converted to a market buy.
+4. After a SELL signal in maker mode the stop loss and take profit are cancelled while the limit sell at the High waits. If that order never fills, the position is unprotected.
+5. Paper limit orders fill in two halves (50% steps) so the staged stop-loss levels are exercised.
+6. The bot treats ANY open paper position as its own (including one made with the manual test buttons on the Positions screen). A leftover below the minimum order (Rp50,000) is ignored.
+7. Take profit and stop loss use the settings at the time of the check, not frozen at entry.
+8. Portfolio snapshots (history over time) are NOT built: they need a new table and a real Room migration, which I chose not to ship untested. The summary is computed from positions and balances.
+9. The engine itself is not covered by unit tests (it needs a database and network); the planner and the portfolio math are.
+10. Needs a real-device check: notification permission prompt, service survival on MIUI with the guide applied, and whether 5m candles exist on Indodax.
+
 ## Strategy rework: normalized 0-100 indicator, dual signal (written 2026-11-15, NOT yet compiled)
 Replaces the raw +/- zones (invalid across coins with different price scales).
 - Indicator: MACD and signal line are scaled to 0-100 over a rolling window of `norm_lookback` candles (highest/lowest over both lines; range 0 gives 50/50). Closed candles only.

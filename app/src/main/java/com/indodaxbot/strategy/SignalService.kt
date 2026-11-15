@@ -9,8 +9,19 @@ import com.indodaxbot.api.Kind
 import com.indodaxbot.data.AppDatabase
 import com.indodaxbot.data.SignalCursor
 import com.indodaxbot.data.TradingSignal
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/** An actionable (new, fresh) BUY/SELL signal, emitted once per candle to whoever trades on it. */
+data class SignalEvent(
+    val type: SignalType,
+    val candleTimeSec: Long,
+    val low: Long,
+    val high: Long,
+    val closePrice: Double
+)
 
 data class SignalSnapshot(
     val config: StrategyConfig,
@@ -34,6 +45,13 @@ class SignalService(
     private val clock: () -> Long = { System.currentTimeMillis() }
 ) {
     private val mutex = Mutex()
+    private val _events = MutableSharedFlow<SignalEvent>(extraBufferCapacity = 8)
+
+    /**
+     * Emits each actionable signal exactly once, from whichever caller (Dashboard or bot) first sees the
+     * new candle. Nobody listening means the signal is not traded.
+     */
+    val events: SharedFlow<SignalEvent> = _events
 
     suspend fun refresh(): ApiResult<SignalSnapshot> = mutex.withLock { doRefresh() }
 
@@ -77,6 +95,12 @@ class SignalService(
                 }
                 dao.setCursor(SignalCursor(cursorId, latest.timeSec))
             }
+        }
+        val candle = eval.signalCandle
+        if (eval.status == EvalStatus.OK && eval.actionable && candle != null) {
+            _events.tryEmit(
+                SignalEvent(eval.type, candle.timeSec, Math.round(candle.low), Math.round(candle.high), candle.close)
+            )
         }
         val last = dao.latest(pair, cfg.timeframe, 1).firstOrNull()
         return ApiResult.Success(SignalSnapshot(cfg, eval, last, nowMs, closed.takeLast(CHART_CANDLES)))

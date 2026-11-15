@@ -16,14 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.indodaxbot.api.IndodaxClient
-import com.indodaxbot.data.AppDatabase
-import com.indodaxbot.security.CredentialStore
-import com.indodaxbot.strategy.SignalService
-import com.indodaxbot.strategy.StrategyStore
-import com.indodaxbot.trading.PaperBroker
 import com.indodaxbot.ui.DashboardScreen
 import com.indodaxbot.ui.PositionsScreen
 import com.indodaxbot.ui.SettingsScreen
@@ -31,23 +24,15 @@ import com.indodaxbot.ui.SettingsScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val store = CredentialStore(applicationContext)
-        val client = IndodaxClient(credentials = { store.load() })
-        val db = AppDatabase.get(applicationContext)
-        val strategyStore = StrategyStore(applicationContext)
-        val signalService = SignalService(client, db, config = { strategyStore.current })
-        val broker = PaperBroker(db)
-        setContent { MaterialTheme { AppRoot(store, client, signalService, broker, strategyStore) } }
+        val container = (application as BotApp).container
+        setContent { MaterialTheme { AppRoot(container) } }
     }
 }
 
 private val tabs = listOf("Dashboard", "Positions", "Settings")
 
 @Composable
-private fun AppRoot(
-    store: CredentialStore, client: IndodaxClient, signalService: SignalService, broker: PaperBroker,
-    strategyStore: StrategyStore
-) {
+private fun AppRoot(c: AppContainer) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
         bottomBar = {
@@ -65,9 +50,9 @@ private fun AppRoot(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (selected) {
-                0 -> DashboardScreen(client, signalService, strategyStore)
-                1 -> PositionsScreen(client, broker)
-                else -> SettingsScreen(store, client, broker, strategyStore)
+                0 -> DashboardScreen(c)
+                1 -> PositionsScreen(c.client, c.broker)
+                else -> SettingsScreen(c.credentialStore, c.client, c.broker, c.strategyStore)
             }
         }
     }

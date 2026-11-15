@@ -42,6 +42,7 @@ class StrategyStore(context: Context) {
             .putBoolean(K_T_USE, e.takerUseSlTp)
             .putString(K_T_SL, e.takerStopLossPct.toString())
             .putString(K_T_TP, e.takerTakeProfitPct.toString())
+            .putLong(K_ORDER, e.orderSizeIdr)
             .apply()
         _execution.value = e
     }
@@ -99,12 +100,13 @@ class StrategyStore(context: Context) {
             slLevel3 = prefs.getInt(K_L3, d.slLevel3),
             takerUseSlTp = prefs.getBoolean(K_T_USE, d.takerUseSlTp),
             takerStopLossPct = dbl(K_T_SL, d.takerStopLossPct),
-            takerTakeProfitPct = dbl(K_T_TP, d.takerTakeProfitPct)
+            takerTakeProfitPct = dbl(K_T_TP, d.takerTakeProfitPct),
+            orderSizeIdr = prefs.getLong(K_ORDER, d.orderSizeIdr)
         )
         val err = StrategyValidator.validateExecution(
             loaded.makerChaseCancelPct, loaded.makerStopLossPct, loaded.makerTakeProfitPct,
             loaded.slLevel1, loaded.slLevel2, loaded.slLevel3,
-            loaded.takerUseSlTp, loaded.takerStopLossPct, loaded.takerTakeProfitPct
+            loaded.takerUseSlTp, loaded.takerStopLossPct, loaded.takerTakeProfitPct, loaded.orderSizeIdr
         )
         return if (err == null) loaded else d
     }
@@ -134,5 +136,6 @@ class StrategyStore(context: Context) {
         const val K_T_USE = "taker_use_sl_tp"
         const val K_T_SL = "taker_stop_loss_pct"
         const val K_T_TP = "taker_take_profit_pct"
+        const val K_ORDER = "order_size_idr"
     }
 }

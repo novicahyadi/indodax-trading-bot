@@ -61,7 +61,9 @@ data class ExecutionConfig(
     val slLevel3: Int = 80,
     val takerUseSlTp: Boolean = false,
     val takerStopLossPct: Double = 5.0,
-    val takerTakeProfitPct: Double = 10.0
+    val takerTakeProfitPct: Double = 10.0,
+    /** IDR spent per BUY (both modes). */
+    val orderSizeIdr: Long = 1_000_000L
 )
 
 object StrategyValidator {
@@ -106,9 +108,13 @@ object StrategyValidator {
     fun validateExecution(
         chase: Double?, makerSl: Double?, makerTp: Double?,
         l1: Int?, l2: Int?, l3: Int?,
-        takerUseSlTp: Boolean, takerSl: Double?, takerTp: Double?
+        takerUseSlTp: Boolean, takerSl: Double?, takerTp: Double?,
+        orderSizeIdr: Long? = 1_000_000L
     ): String? {
         fun badPct(v: Double?, max: Double) = v == null || !v.isFinite() || v <= 0.0 || v > max
+        if (orderSizeIdr == null || orderSizeIdr < 50_000L || orderSizeIdr > 1_000_000_000L) {
+            return "Order size must be from Rp50,000 to Rp1,000,000,000"
+        }
         if (badPct(chase, 100.0)) return "Chase-cancel must be above 0 and at most 100 %"
         if (badPct(makerSl, 99.0)) return "Maker stop loss must be above 0 and below 100 %"
         if (badPct(makerTp, 1000.0)) return "Maker take profit must be above 0 %"

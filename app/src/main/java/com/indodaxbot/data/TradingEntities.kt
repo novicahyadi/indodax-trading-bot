@@ -108,6 +108,12 @@ interface TradingDao {
     @Query("SELECT COALESCE(SUM(realizedPnlIdr), 0) FROM trading_position WHERE mode = :mode")
     suspend fun allTimeRealizedPnl(mode: String): Long
 
+    @Query("SELECT * FROM trading_position WHERE mode = :mode AND status = 'OPEN' ORDER BY createdAtMs DESC")
+    suspend fun openPositions(mode: String): List<Position>
+
+    @Query("SELECT * FROM trading_order WHERE positionId = :positionId ORDER BY createdAtMs ASC")
+    suspend fun ordersOf(positionId: Long): List<TradingOrder>
+
     @Insert suspend fun insertOrder(o: TradingOrder)
     @Update suspend fun updateOrder(o: TradingOrder)
 

@@ -23,7 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -33,7 +33,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +61,7 @@ import com.indodaxbot.trading.PaperBroker
 import com.indodaxbot.trading.PaperResult
 import kotlinx.coroutines.launch
 
-private val settingsTabs = listOf("API", "Strategy", "Execution", "Paper")
+private val settingsTabs = listOf("API", "Strategy", "Execution", "Paper", "Bot")
 
 @Composable
 fun SettingsScreen(
@@ -63,7 +69,7 @@ fun SettingsScreen(
 ) {
     var tab by remember { mutableIntStateOf(0) }
     Column {
-        TabRow(selectedTabIndex = tab) {
+        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
             settingsTabs.forEachIndexed { i, title ->
                 Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
             }
@@ -72,7 +78,8 @@ fun SettingsScreen(
             0 -> ApiTab(store, client)
             1 -> StrategyTab(strategyStore)
             2 -> ExecutionTab(strategyStore)
-            else -> PaperTab(broker)
+            3 -> PaperTab(broker)
+            else -> BotGuideTab()
         }
     }
 }
@@ -399,14 +406,16 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
     var useSlTp by remember(ex) { mutableStateOf(ex.takerUseSlTp) }
     var tSl by remember(ex) { mutableStateOf(fmt(ex.takerStopLossPct)) }
     var tTp by remember(ex) { mutableStateOf(fmt(ex.takerTakeProfitPct)) }
+    var orderSize by remember(ex) { mutableStateOf(ex.orderSizeIdr.toString()) }
     var msg by remember { mutableStateOf("") }
 
     TabColumn {
         Text("Execution mode", style = MaterialTheme.typography.titleLarge)
         Text(
-            "These settings are saved now. The bot does not place orders yet: order execution arrives in a later phase.",
+            "Used by the bot in PAPER mode (simulated orders). Live orders are not enabled yet.",
             style = MaterialTheme.typography.bodySmall
         )
+        IntField("Order size per BUY (IDR)", orderSize, { orderSize = it }, Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = mode == ExecutionMode.MARKET_MAKER,
@@ -458,7 +467,8 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
                 val d = l3.toIntOrNull()
                 val ts = tSl.toDoubleOrNull()
                 val tt = tTp.toDoubleOrNull()
-                val err = StrategyValidator.validateExecution(c, ms, mt, a, b, d, useSlTp, ts, tt)
+                val size = orderSize.toLongOrNull()
+                val err = StrategyValidator.validateExecution(c, ms, mt, a, b, d, useSlTp, ts, tt, size)
                 if (err != null) {
                     msg = err
                 } else {
@@ -467,7 +477,8 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
                             mode = mode, makerChaseCancelPct = c!!, makerStopLossPct = ms!!, makerTakeProfitPct = mt!!,
                             slLevel1 = a!!, slLevel2 = b!!, slLevel3 = d!!,
                             takerUseSlTp = useSlTp, takerStopLossPct = ts ?: ex.takerStopLossPct,
-                            takerTakeProfitPct = tt ?: ex.takerTakeProfitPct
+                            takerTakeProfitPct = tt ?: ex.takerTakeProfitPct,
+                            orderSizeIdr = size!!
                         )
                     )
                     msg = "Saved."
@@ -518,5 +529,51 @@ private fun PaperTab(broker: PaperBroker) {
         ) { Text(if (confirmReset) "Confirm reset" else "Reset paper account") }
 
         if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+private fun tryStart(ctx: Context, intent: Intent, fallback: Intent) {
+    try {
+        ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        try { ctx.startActivity(fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e2: Exception) { /* nothing else to open */ }
+    }
+}
+
+@Composable
+private fun BotGuideTab() {
+    val ctx = LocalContext.current
+    val appInfo = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))
+    TabColumn {
+        Text("Keep the bot alive (Xiaomi / MIUI)", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "MIUI closes background apps aggressively. Without these settings the bot may stop while the screen is off, and open positions are then NOT watched.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            "1. Autostart: allow this app.\n" +
+                "2. Battery saver for this app: choose \"No restrictions\".\n" +
+                "3. Recent apps: long-press the app card and tap the lock icon so it is not cleared.\n" +
+                "4. Notifications: allow them, so you can see the bot status and the Stop button.\n" +
+                "5. Do not use \"Force stop\" or swipe-away cleaners.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        GuideButton("Open Autostart settings") {
+            tryStart(
+                ctx,
+                Intent().setComponent(
+                    ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+                ),
+                appInfo
+            )
+        }
+        GuideButton("Open battery optimization settings") {
+            tryStart(ctx, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), appInfo)
+        }
+        GuideButton("Open app info (battery, notifications)") { tryStart(ctx, appInfo, appInfo) }
+        Text(
+            "The bot runs as a foreground service with a notification. It does not restart after a phone reboot: open the app and tap Start bot again.",
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }

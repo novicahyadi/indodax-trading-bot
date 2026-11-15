@@ -151,6 +151,8 @@ class StrategyTest {
         assertNull(ve(use = false, tsl = null, ttp = null))     // taker values ignored while OFF
         assertNotNull(ve(use = true, tsl = null))
         assertNotNull(ve(use = true, ttp = 0.0))
+        assertNotNull(StrategyValidator.validateExecution(5.0, 5.0, 10.0, 30, 50, 80, false, 5.0, 10.0, 10_000L))
+        assertNotNull(StrategyValidator.validateExecution(5.0, 5.0, 10.0, 30, 50, 80, false, 5.0, 10.0, null))
     }
 
     @Test fun markers_followToggles() {

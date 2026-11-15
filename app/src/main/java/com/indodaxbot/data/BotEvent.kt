@@ -21,4 +21,7 @@ interface BotEventDao {
     @Insert suspend fun insert(event: BotEvent): Long
     @Query("SELECT * FROM bot_event ORDER BY timestampMs DESC LIMIT :limit")
     suspend fun latest(limit: Int): List<BotEvent>
+
+    @Query("SELECT * FROM bot_event ORDER BY timestampMs DESC, id DESC LIMIT :limit")
+    fun observeLatest(limit: Int): kotlinx.coroutines.flow.Flow<List<BotEvent>>
 }

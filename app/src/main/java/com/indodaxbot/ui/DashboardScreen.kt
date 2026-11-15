@@ -26,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.indodaxbot.AppContainer
 import com.indodaxbot.api.Candles
+import com.indodaxbot.trading.Money
 import com.indodaxbot.strategy.Timeframes
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,10 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.indodaxbot.api.ApiResult
-import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.api.MarketSnapshot
-import com.indodaxbot.strategy.SignalService
-import com.indodaxbot.strategy.StrategyStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -72,7 +71,10 @@ private fun percent(p: Double): String = String.format(Locale("id", "ID"), "%+.2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strategyStore: StrategyStore) {
+fun DashboardScreen(container: AppContainer) {
+    val client = container.client
+    val signalService = container.signalService
+    val strategyStore = container.strategyStore
     var state by remember { mutableStateOf(PriceState()) }
     var refreshing by remember { mutableStateOf(false) }
     var signalTick by remember { mutableIntStateOf(0) }
@@ -112,6 +114,8 @@ fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strateg
         ) {
             Text("Dashboard", style = MaterialTheme.typography.titleLarge)
             PriceCard(state.snapshot)
+            BotCard(container)
+            PortfolioCard(container, state.snapshot?.ticker?.buy?.let { Money.idr(it) })
             SignalsSection(signalService, strategyStore, signalTick)
 
             val footer = buildString {
@@ -126,11 +130,6 @@ fun DashboardScreen(client: IndodaxClient, signalService: SignalService, strateg
             state.error?.let {
                 Text("Last refresh failed ($it)", style = MaterialTheme.typography.bodySmall, color = Red)
             }
-            Text(
-                "Bot controls, signals and portfolio arrive in later phases.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
