@@ -1,173 +1,158 @@
 package com.indodaxbot.strategy
 
-import com.indodaxbot.api.Candle
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.sin
 
 class StrategyTest {
-    private val cfg = StrategyConfig(
-        timeframe = "15", mode = StrategyMode.ZONE_REVERSAL, buyZone = -1.0, sellZone = 1.0
-    )
+    private val cfg = StrategyConfig()
 
-    /** Points whose signal line follows [signals]; MACD itself is irrelevant to the zone rule. */
-    private fun pts(vararg signals: Double) =
-        signals.mapIndexed { i, s -> MacdPoint(i * 900L, s, s, 0.0) }
+    private fun sigSeries(vararg s: Double) = s.mapIndexed { i, v -> NormPoint(i.toLong(), 50.0, v) }
+    private fun pair(m1: Double, s1: Double, m0: Double, s0: Double) =
+        listOf(NormPoint(0, m1, s1), NormPoint(1, m0, s0))
 
-    @Test
-    fun buy_whenSignalTurnsUpInsideBuyZone() {
-        assertEquals(SignalType.BUY, Strategy.detect(pts(-0.8, -1.2, -1.0), cfg))
+    // ---- Reversal ----
+    @Test fun reversal_buyInZone() =
+        assertEquals(SignalType.BUY, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.0), 2, cfg))
+
+    @Test fun reversal_noBuyOutsideZone() =
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(50.0, 45.0, 48.0), 2, cfg))
+
+    @Test fun reversal_thresholdIsStrict() {
+        val c = cfg.copy(reversalThreshold = 3.0)
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.0), 2, c))
+        assertEquals(SignalType.BUY, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.1), 2, c))
     }
 
-    @Test
-    fun buy_zoneBoundaryCountsAsTouching() {
-        assertEquals(SignalType.BUY, Strategy.detect(pts(-0.5, -1.0, -0.9), cfg))
+    @Test fun reversal_sellInZone() =
+        assertEquals(SignalType.SELL, DualSignal.reversalAt(sigSeries(90.0, 95.0, 92.0), 2, cfg))
+
+    @Test fun reversal_stillFallingInZone_isHold() =
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(30.0, 25.0, 15.0), 2, cfg))
+
+    @Test fun reversal_currentValueInZoneIsEnough() {
+        val c = cfg.copy(buyZoneMin = 5.0)
+        // S1 = 3 is below the zone, S0 = 6 is inside it
+        assertEquals(SignalType.BUY, DualSignal.reversalAt(sigSeries(10.0, 3.0, 6.0), 2, c))
     }
 
-    @Test
-    fun buy_afterFlatBottom() {
-        assertEquals(SignalType.BUY, Strategy.detect(pts(-1.2, -1.2, -1.0), cfg))
+    @Test fun reversal_needsThreePoints() =
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(5.0, 8.0), 1, cfg))
+
+    // ---- Crossover angle ----
+    @Test fun angle_matchesFormula() {
+        assertEquals(23.7026, DualSignal.angleDeg(60.0, 40.0, 44.0, 42.0), 1e-3)
+        assertEquals(1.4144, DualSignal.angleDeg(50.0, 40.0, 49.0, 41.0), 1e-3)
     }
 
-    @Test
-    fun noBuy_whenTroughOutsideZone() {
-        assertEquals(SignalType.HOLD, Strategy.detect(pts(-0.2, -0.5, -0.3), cfg))
+    @Test fun crossover_buyWhenAngleLargeEnough() {
+        val r = DualSignal.crossoverAt(pair(40.0, 42.0, 60.0, 44.0), 1, cfg)
+        assertEquals(SignalType.BUY, r.type)
+        assertEquals(23.7026, r.angleDeg, 1e-3)
     }
 
-    @Test
-    fun noBuy_whileStillFalling() {
-        assertEquals(SignalType.HOLD, Strategy.detect(pts(-0.8, -1.2, -1.5), cfg))
+    @Test fun crossover_shallowAngleIsRejected() =
+        assertEquals(SignalType.HOLD, DualSignal.crossoverAt(pair(40.0, 41.0, 50.0, 49.0), 1, cfg).type)
+
+    @Test fun crossover_sell() =
+        assertEquals(SignalType.SELL, DualSignal.crossoverAt(pair(60.0, 58.0, 40.0, 56.0), 1, cfg).type)
+
+    @Test fun crossover_noCrossIsHold() =
+        assertEquals(SignalType.HOLD, DualSignal.crossoverAt(pair(40.0, 42.0, 41.0, 43.0), 1, cfg).type)
+
+    // ---- Combination ----
+    @Test fun combine_and() {
+        val b = SignalType.BUY; val h = SignalType.HOLD; val s = SignalType.SELL
+        assertEquals(b, DualSignal.combine(b, b, LogicMode.AND))
+        assertEquals(h, DualSignal.combine(b, h, LogicMode.AND))
+        assertEquals(h, DualSignal.combine(b, s, LogicMode.AND))
     }
 
-    @Test
-    fun noBuy_secondCandleAfterTurn() {
-        // The turn was already confirmed one candle ago; this candle just continues up.
-        assertEquals(SignalType.HOLD, Strategy.detect(pts(-1.2, -1.0, -0.8), cfg))
+    @Test fun combine_or() {
+        val b = SignalType.BUY; val h = SignalType.HOLD; val s = SignalType.SELL
+        assertEquals(b, DualSignal.combine(b, h, LogicMode.OR))
+        assertEquals(s, DualSignal.combine(h, s, LogicMode.OR))
+        assertEquals(h, DualSignal.combine(b, s, LogicMode.OR))   // conflict -> no trade
     }
 
-    @Test
-    fun sell_whenSignalTurnsDownInsideSellZone() {
-        assertEquals(SignalType.SELL, Strategy.detect(pts(0.8, 1.2, 1.1), cfg))
-        assertEquals(SignalType.SELL, Strategy.detect(pts(1.2, 1.2, 1.0), cfg))
+    @Test fun combine_offStrategyUsesTheActiveOneOnly() {
+        assertEquals(SignalType.BUY, DualSignal.combine(null, SignalType.BUY, LogicMode.AND))
+        assertEquals(SignalType.SELL, DualSignal.combine(SignalType.SELL, null, LogicMode.AND))
+        assertEquals(SignalType.HOLD, DualSignal.combine(null, null, LogicMode.OR))
     }
 
-    @Test
-    fun noSell_whenPeakOutsideZone_orStillRising() {
-        assertEquals(SignalType.HOLD, Strategy.detect(pts(0.2, 0.5, 0.3), cfg))
-        assertEquals(SignalType.HOLD, Strategy.detect(pts(0.8, 1.2, 1.5), cfg))
+    @Test fun detect_respectsToggles() {
+        // A series where reversal says BUY at the last point but there is no crossover.
+        val n = listOf(NormPoint(0, 60.0, 10.0), NormPoint(1, 60.0, 5.0), NormPoint(2, 60.0, 8.0))
+        assertEquals(SignalType.BUY, DualSignal.detect(n, cfg.copy(enableCrossover = false)))
+        assertEquals(SignalType.HOLD, DualSignal.detect(n, cfg.copy(enableReversal = false)))
+        assertEquals(SignalType.HOLD, DualSignal.detect(n, cfg.copy(logicMode = LogicMode.AND)))
+        assertEquals(SignalType.BUY, DualSignal.detect(n, cfg.copy(logicMode = LogicMode.OR)))
     }
 
-    @Test
-    fun zones_missingMeansHold() {
-        val noZones = cfg.copy(buyZone = null, sellZone = null)
-        assertEquals(SignalType.HOLD, Strategy.detect(pts(-0.8, -1.2, -1.0), noZones))
+    // ---- Config and validation ----
+    @Test fun defaults_matchTheSpec() {
+        assertEquals(50, cfg.normLookback)
+        assertEquals(0.0, cfg.buyZoneMin, 0.0); assertEquals(20.0, cfg.buyZoneMax, 0.0)
+        assertEquals(80.0, cfg.sellZoneMin, 0.0); assertEquals(100.0, cfg.sellZoneMax, 0.0)
+        assertEquals(15.0, cfg.minCrossoverAngle, 0.0)
+        assertEquals(26 + 9 + 50, cfg.requiredCandles)
+        assertEquals(ExecutionMode.MARKET_MAKER, ExecutionConfig().mode)
+        assertEquals(false, ExecutionConfig().takerUseSlTp)
     }
 
-    @Test
-    fun crossoverMode_stillWorks() {
-        val c = cfg.copy(mode = StrategyMode.CROSSOVER)
-        val points = listOf(MacdPoint(0, -1.0, 0.0, -1.0), MacdPoint(900, 1.0, 0.0, 1.0))
-        assertEquals(SignalType.BUY, Strategy.detect(points, c))
+    @Test fun key_changesWithSettings_butNotWithExecution() {
+        assertNotEquals(cfg.key(), cfg.copy(timeframe = "60").key())
+        assertNotEquals(cfg.key(), cfg.copy(sellZoneMin = 75.0).key())
+        assertNotEquals(cfg.key(), cfg.copy(logicMode = LogicMode.AND).key())
+        assertNotEquals(cfg.key(), cfg.copy(normLookback = 40).key())
     }
 
-    @Test
-    fun markers_onlyAtValidReversals() {
-        val points = pts(-0.5, -1.2, -1.0, -0.5, 0.5, 1.2, 1.0, 0.0)
-        val m = Strategy.markers(points, cfg)
-        assertEquals(listOf(2 to SignalType.BUY, 6 to SignalType.SELL), m)
+    private fun v(
+        fast: Int? = 12, slow: Int? = 26, sig: Int? = 9, lb: Int? = 50,
+        bMin: Double? = 0.0, bMax: Double? = 20.0, sMin: Double? = 80.0, sMax: Double? = 100.0,
+        thr: Double? = 0.0, ang: Double? = 15.0, rev: Boolean = true, cross: Boolean = true
+    ) = StrategyValidator.validate(fast, slow, sig, lb, bMin, bMax, sMin, sMax, thr, ang, rev, cross)
+
+    @Test fun validator_acceptsDefaults() = assertNull(v())
+
+    @Test fun validator_rejectsBadValues() {
+        assertNotNull(v(fast = 26, slow = 12))
+        assertNotNull(v(fast = null))
+        assertNotNull(v(lb = 5))
+        assertNotNull(v(bMax = 120.0))
+        assertNotNull(v(bMin = 30.0, bMax = 20.0))
+        assertNotNull(v(bMax = 85.0))                // overlaps the sell zone
+        assertNotNull(v(sMin = null))
+        assertNotNull(v(thr = -1.0))
+        assertNotNull(v(ang = 91.0))
+        assertNotNull(v(ang = Double.NaN))
+        assertNotNull(v(rev = false, cross = false))
     }
 
-    // ----- integration with real MACD math on a synthetic wave (signal line swings about +-3.2) -----
+    private fun ve(
+        chase: Double? = 5.0, sl: Double? = 5.0, tp: Double? = 10.0,
+        l1: Int? = 30, l2: Int? = 50, l3: Int? = 80,
+        use: Boolean = false, tsl: Double? = 5.0, ttp: Double? = 10.0
+    ) = StrategyValidator.validateExecution(chase, sl, tp, l1, l2, l3, use, tsl, ttp)
 
-    private val tf = 900L
-    private val t0 = 1_700_000_000L
-    private val wave = List(300) {
-        val c = 100.0 + 10.0 * sin(it / 8.0)
-        Candle(t0 + it * tf, c, c, c, c, 1.0)
+    @Test fun executionValidator() {
+        assertNull(ve())
+        assertNotNull(ve(chase = 0.0))
+        assertNotNull(ve(sl = 100.0))
+        assertNotNull(ve(l1 = 50, l2 = 50))
+        assertNotNull(ve(l3 = 100))
+        assertNotNull(ve(l1 = null))
+        assertNull(ve(use = false, tsl = null, ttp = null))     // taker values ignored while OFF
+        assertNotNull(ve(use = true, tsl = null))
+        assertNotNull(ve(use = true, ttp = 0.0))
     }
 
-    @Test
-    fun wave_withZonesNearExtremes_givesBuysAndSellsOnlyInsideZones() {
-        val c = StrategyConfig("15", MacdParams(), StrategyMode.ZONE_REVERSAL, -1.6, 1.6)
-        val points = Macd.compute(wave)
-        val m = Strategy.markers(points, c)
-        assertTrue(m.any { it.second == SignalType.BUY })
-        assertTrue(m.any { it.second == SignalType.SELL })
-        for ((i, t) in m) {
-            val trough = points[i - 1].signal
-            if (t == SignalType.BUY) assertTrue(trough <= -1.6) else assertTrue(trough >= 1.6)
-        }
-    }
-
-    @Test
-    fun wave_withZonesFarAway_givesNothing() {
-        val c = StrategyConfig("15", MacdParams(), StrategyMode.ZONE_REVERSAL, -1000.0, 1000.0)
-        assertTrue(Strategy.markers(Macd.compute(wave), c).isEmpty())
-    }
-
-    @Test
-    fun evaluator_notConfiguredWithoutZones_butStillReturnsChartData() {
-        val c = StrategyConfig("15", MacdParams(), StrategyMode.ZONE_REVERSAL, null, null)
-        val now = wave.last().timeSec + tf + 30
-        val e = SignalEvaluator.evaluate(wave, tf, now, null, c)
-        assertEquals(EvalStatus.NOT_CONFIGURED, e.status)
-        assertFalse(e.actionable)
-        assertTrue(e.points.isNotEmpty())
-        assertNotNull(e.latest)
-    }
-
-    @Test
-    fun evaluator_zoneBuy_isActionableOnceThenNot() {
-        val c = StrategyConfig("15", MacdParams(), StrategyMode.ZONE_REVERSAL, -1.6, 1.6)
-        val points = Macd.compute(wave)
-        val m = Strategy.markers(points, c).first {
-            it.second == SignalType.BUY && wave.indexOfFirst { w -> w.timeSec == points[it.first].timeSec } + 1 >= MacdParams().warmupCandles
-        }
-        val k = wave.indexOfFirst { it.timeSec == points[m.first].timeSec }
-        val closed = wave.subList(0, k + 1)
-        val now = closed.last().timeSec + tf + 30
-        val first = SignalEvaluator.evaluate(closed, tf, now, null, c)
-        assertEquals(SignalType.BUY, first.type)
-        assertTrue(first.actionable)
-        val second = SignalEvaluator.evaluate(closed, tf, now + 5, first.latest!!.timeSec, c)
-        assertFalse(second.actionable)
-    }
-
-    // ----- validation and config -----
-
-    @Test
-    fun validator_acceptsGoodValues() {
-        assertNull(StrategyValidator.validate(12, 26, 9, -1.0, 1.0, true))
-        assertNull(StrategyValidator.validate(5, 35, 5, null, null, false))
-    }
-
-    @Test
-    fun validator_rejectsBadValues() {
-        assertNotNull(StrategyValidator.validate(26, 12, 9, null, null, false))   // fast >= slow
-        assertNotNull(StrategyValidator.validate(null, 26, 9, null, null, false))
-        assertNotNull(StrategyValidator.validate(12, 26, 1, null, null, false))
-        assertNotNull(StrategyValidator.validate(12, 500, 9, null, null, false))
-        assertNotNull(StrategyValidator.validate(12, 26, 9, 1.0, -1.0, true))     // buy >= sell
-        assertNotNull(StrategyValidator.validate(12, 26, 9, 1.0, null, true))     // only one zone
-    }
-
-    @Test
-    fun configKey_changesWithAnySetting() {
-        val a = StrategyConfig("15", MacdParams(), StrategyMode.ZONE_REVERSAL, -1.0, 1.0)
-        assertTrue(a.key() != a.copy(timeframe = "60").key())
-        assertTrue(a.key() != a.copy(macd = MacdParams(8, 21, 5)).key())
-        assertTrue(a.key() != a.copy(buyZone = -2.0).key())
-        assertTrue(a.key() != a.copy(mode = StrategyMode.CROSSOVER).key())
-    }
-
-    @Test
-    fun timeframeLabels() {
+    @Test fun timeframes_labels() {
         assertEquals("1h", Timeframes.label("60"))
-        assertEquals("15m", Timeframes.label("15"))
-        assertEquals("1D", Timeframes.label("1D"))
+        assertTrue("1D" in Timeframes.all)
     }
 }

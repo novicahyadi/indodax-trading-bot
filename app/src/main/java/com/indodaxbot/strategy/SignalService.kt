@@ -41,7 +41,7 @@ class SignalService(
         val cfg = config()   // read once: a config change mid-refresh applies from the next refresh
         val tfSec = Candles.timeframeSeconds(cfg.timeframe)
             ?: return ApiResult.Failure(Kind.MALFORMED, "Unsupported timeframe")
-        val fetchCount = maxOf(200, cfg.macd.warmupCandles + CHART_CANDLES + 20)
+        val fetchCount = maxOf(200, cfg.requiredCandles + CHART_CANDLES + 20)
         val raw = client.candles(pair, cfg.timeframe, fetchCount)
         val candles = when (raw) {
             is ApiResult.Success -> raw.value
@@ -65,9 +65,10 @@ class SignalService(
                             timeframe = cfg.timeframe,
                             type = eval.type.name,
                             candleTimeSec = latest.timeSec,
-                            macd = latest.macd,
-                            signalLine = latest.signal,
-                            histogram = latest.histogram,
+                            // Stored on the normalized 0-100 scale: macd, signal, and their difference.
+                            macd = latest.macdNorm,
+                            signalLine = latest.signalNorm,
+                            histogram = latest.macdNorm - latest.signalNorm,
                             closePrice = eval.latestClose ?: 0.0,
                             actionable = eval.actionable,
                             createdAtMs = nowMs

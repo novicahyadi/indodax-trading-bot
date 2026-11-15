@@ -1,18 +1,14 @@
 package com.indodaxbot.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,7 +31,6 @@ import com.indodaxbot.strategy.EvalStatus
 import com.indodaxbot.strategy.SignalService
 import com.indodaxbot.strategy.SignalSnapshot
 import com.indodaxbot.strategy.SignalType
-import com.indodaxbot.strategy.StrategyMode
 import com.indodaxbot.strategy.StrategyStore
 import com.indodaxbot.strategy.Timeframes
 import kotlinx.coroutines.delay
@@ -71,8 +66,6 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
     val config by store.config.collectAsState()
     var snap by remember { mutableStateOf<SignalSnapshot?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    // Timeframe the user has picked but not applied yet.
-    var pendingTf by remember(config.timeframe) { mutableStateOf(config.timeframe) }
 
     LaunchedEffect(refreshTick, config) {
         while (true) {
@@ -123,24 +116,6 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
                 )
             }
 
-            // Timeframe picker + Apply
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Timeframes.all.forEach { tf ->
-                    FilterChip(
-                        selected = pendingTf == tf,
-                        onClick = { pendingTf = tf },
-                        label = { Text(Timeframes.label(tf)) }
-                    )
-                }
-            }
-            Button(
-                enabled = pendingTf != config.timeframe,
-                onClick = { store.applyTimeframe(pendingTf) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (pendingTf != config.timeframe) "Apply ${Timeframes.label(pendingTf)}" else "Applied")
-            }
-
             Text(
                 if (eval == null) "…" else type.name,
                 color = sigColor,
@@ -153,16 +128,13 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
             )
 
             Row(Modifier.fillMaxWidth()) {
-                SigValue("MACD", num(eval?.latest?.macd), Modifier.weight(1f))
-                SigValue("Signal line", num(eval?.latest?.signal), Modifier.weight(1f))
-                SigValue(
-                    "Histogram", num(eval?.latest?.histogram), Modifier.weight(1f),
-                    color = eval?.latest?.histogram?.let { if (it < 0) SigRed else SigGreen }
-                )
+                SigValue("MACD (0-100)", num(eval?.latest?.macdNorm), Modifier.weight(1f))
+                SigValue("Signal (0-100)", num(eval?.latest?.signalNorm), Modifier.weight(1f))
+                SigValue("Cross angle", eval?.crossAngleDeg?.let { "${num(it)}°" } ?: "—", Modifier.weight(1f))
             }
 
-            if (s != null && eval != null && eval.points.isNotEmpty()) {
-                MacdChart(s.chartCandles, eval.points, config, Modifier.fillMaxWidth())
+            if (s != null && eval != null && eval.norm.isNotEmpty()) {
+                MacdChart(s.chartCandles, eval.norm, config, Modifier.fillMaxWidth())
             } else if (eval == null) {
                 Text("Loading chart…", style = MaterialTheme.typography.bodySmall)
             }
@@ -170,20 +142,20 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
             HorizontalDivider()
 
             Text(
-                "Strategy: " + when (config.mode) {
-                    StrategyMode.ZONE_REVERSAL -> "signal-line reversal in zones"
-                    StrategyMode.CROSSOVER -> "MACD / signal crossover"
-                } + "  ·  MACD ${config.macd.fast}, ${config.macd.slow}, ${config.macd.signal}",
+                "MACD ${config.macd.fast}, ${config.macd.slow}, ${config.macd.signal}  ·  lookback ${config.normLookback}  ·  " +
+                    "logic ${if (config.anyEnabled) config.logicMode.name else "-"}",
                 style = MaterialTheme.typography.bodySmall
             )
-            if (config.mode == StrategyMode.ZONE_REVERSAL) {
-                Text(
-                    if (config.zonesSet) "BUY zone ≤ ${num(config.buyZone)}   ·   SELL zone ≥ ${num(config.sellZone)}"
-                    else "Zones not set for ${Timeframes.label(config.timeframe)} (Settings)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (config.zonesSet) MaterialTheme.colorScheme.onSurfaceVariant else SigRed
-                )
-            }
+            Text(
+                "BUY zone ${num(config.buyZoneMin)}-${num(config.buyZoneMax)}   ·   SELL zone ${num(config.sellZoneMin)}-${num(config.sellZoneMax)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Reversal: ${eval?.reversal?.name ?: "OFF"}  ·  Crossover: ${eval?.crossover?.name ?: "OFF"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             val last = s?.lastSignal
             Text(

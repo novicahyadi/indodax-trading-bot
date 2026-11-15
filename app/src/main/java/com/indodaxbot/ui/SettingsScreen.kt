@@ -1,68 +1,122 @@
 package com.indodaxbot.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.indodaxbot.api.ApiResult
 import com.indodaxbot.api.IndodaxClient
 import com.indodaxbot.security.CredentialStore
-import com.indodaxbot.trading.PaperBroker
-import com.indodaxbot.trading.PaperResult
+import com.indodaxbot.strategy.ExecutionConfig
+import com.indodaxbot.strategy.ExecutionMode
+import com.indodaxbot.strategy.LogicMode
 import com.indodaxbot.strategy.MacdParams
-import com.indodaxbot.strategy.StrategyMode
+import com.indodaxbot.strategy.StrategyConfig
 import com.indodaxbot.strategy.StrategyStore
 import com.indodaxbot.strategy.StrategyValidator
 import com.indodaxbot.strategy.Timeframes
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.FilterChip
-import androidx.compose.runtime.collectAsState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.ui.text.input.KeyboardType
+import com.indodaxbot.trading.PaperBroker
+import com.indodaxbot.trading.PaperResult
 import kotlinx.coroutines.launch
+
+private val settingsTabs = listOf("API", "Strategy", "Execution", "Paper")
 
 @Composable
 fun SettingsScreen(
     store: CredentialStore, client: IndodaxClient, broker: PaperBroker, strategyStore: StrategyStore
 ) {
-    val cfg by strategyStore.config.collectAsState()
-    var fastTxt by remember(cfg.macd) { mutableStateOf(cfg.macd.fast.toString()) }
-    var slowTxt by remember(cfg.macd) { mutableStateOf(cfg.macd.slow.toString()) }
-    var sigTxt by remember(cfg.macd) { mutableStateOf(cfg.macd.signal.toString()) }
-    var modeSel by remember(cfg.mode) { mutableStateOf(cfg.mode) }
-    var buyTxt by remember(cfg.timeframe, cfg.buyZone) { mutableStateOf(zoneText(cfg.buyZone)) }
-    var sellTxt by remember(cfg.timeframe, cfg.sellZone) { mutableStateOf(zoneText(cfg.sellZone)) }
-    var stratMsg by remember { mutableStateOf("") }
+    var tab by remember { mutableIntStateOf(0) }
+    Column {
+        TabRow(selectedTabIndex = tab) {
+            settingsTabs.forEachIndexed { i, title ->
+                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
+            }
+        }
+        when (tab) {
+            0 -> ApiTab(store, client)
+            1 -> StrategyTab(strategyStore)
+            2 -> ExecutionTab(strategyStore)
+            else -> PaperTab(broker)
+        }
+    }
+}
+
+@Composable
+private fun TabColumn(content: @Composable () -> Unit) {
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) { content() }
+}
+
+@Composable
+private fun IntField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(
+        value = value, onValueChange = { onChange(it.filter(Char::isDigit)) },
+        label = { Text(label) }, singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun DecField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(
+        value = value, onValueChange = { onChange(it.filter { c -> c.isDigit() || c == '.' }) },
+        label = { Text(label) }, singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+private fun fmt(v: Double): String = if (v == Math.rint(v) && kotlin.math.abs(v) < 1e12) v.toLong().toString() else v.toString()
+
+@Composable
+private fun ApiTab(store: CredentialStore, client: IndodaxClient) {
     var apiKey by remember { mutableStateOf("") }
     var apiSecret by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(store.hasCredentials()) }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var paperIdr by remember { mutableStateOf("10000000") }
-    var confirmReset by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    TabColumn {
         Text("Indodax API", style = MaterialTheme.typography.titleLarge)
         Text(
             if (saved) "Credentials saved (encrypted)." else "No credentials saved.",
@@ -127,83 +181,217 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth()
         ) { Text("Remove credentials") }
 
+        if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun StrategyTab(strategyStore: StrategyStore) {
+    val cfg by strategyStore.config.collectAsState()
+    var tf by remember(cfg) { mutableStateOf(cfg.timeframe) }
+    var fast by remember(cfg) { mutableStateOf(cfg.macd.fast.toString()) }
+    var slow by remember(cfg) { mutableStateOf(cfg.macd.slow.toString()) }
+    var sig by remember(cfg) { mutableStateOf(cfg.macd.signal.toString()) }
+    var lookback by remember(cfg) { mutableStateOf(cfg.normLookback.toString()) }
+    var sellMin by remember(cfg) { mutableStateOf(fmt(cfg.sellZoneMin)) }
+    var sellMax by remember(cfg) { mutableStateOf(fmt(cfg.sellZoneMax)) }
+    var buyMin by remember(cfg) { mutableStateOf(fmt(cfg.buyZoneMin)) }
+    var buyMax by remember(cfg) { mutableStateOf(fmt(cfg.buyZoneMax)) }
+    var enRev by remember(cfg) { mutableStateOf(cfg.enableReversal) }
+    var revThr by remember(cfg) { mutableStateOf(fmt(cfg.reversalThreshold)) }
+    var enCross by remember(cfg) { mutableStateOf(cfg.enableCrossover) }
+    var angle by remember(cfg) { mutableStateOf(fmt(cfg.minCrossoverAngle)) }
+    var logic by remember(cfg) { mutableStateOf(cfg.logicMode) }
+    var msg by remember { mutableStateOf("") }
+
+    TabColumn {
+        Text("Timeframe", style = MaterialTheme.typography.titleLarge)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Timeframes.all.forEach { t ->
+                FilterChip(selected = tf == t, onClick = { tf = t }, label = { Text(Timeframes.label(t)) })
+            }
+        }
+
         HorizontalDivider()
-        Text("MACD strategy", style = MaterialTheme.typography.titleLarge)
+        Text("MACD and normalization", style = MaterialTheme.typography.titleLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = fastTxt, onValueChange = { fastTxt = it.filter(Char::isDigit) },
-                label = { Text("Fast EMA") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = slowTxt, onValueChange = { slowTxt = it.filter(Char::isDigit) },
-                label = { Text("Slow EMA") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = sigTxt, onValueChange = { sigTxt = it.filter(Char::isDigit) },
-                label = { Text("Signal") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f)
-            )
+            IntField("Fast EMA", fast, { fast = it }, Modifier.weight(1f))
+            IntField("Slow EMA", slow, { slow = it }, Modifier.weight(1f))
+            IntField("Signal", sig, { sig = it }, Modifier.weight(1f))
         }
-        Text("Signal rule", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = modeSel == StrategyMode.ZONE_REVERSAL,
-                onClick = { modeSel = StrategyMode.ZONE_REVERSAL },
-                label = { Text("Zone reversal") }
-            )
-            FilterChip(
-                selected = modeSel == StrategyMode.CROSSOVER,
-                onClick = { modeSel = StrategyMode.CROSSOVER },
-                label = { Text("Crossover") }
-            )
-        }
+        IntField("Normalization lookback (candles)", lookback, { lookback = it }, Modifier.fillMaxWidth())
         Text(
-            "Zone reversal: BUY when the signal line reverses upward after touching the buy zone, SELL when it reverses downward after touching the sell zone. Crossover: BUY/SELL when MACD crosses the signal line.",
+            "The indicator is scaled to 0-100 over the last N candles, so the zones work for any coin.",
             style = MaterialTheme.typography.bodySmall
         )
+        Text("Zona SELL (0-100)", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DecField("Sell min", sellMin, { sellMin = it }, Modifier.weight(1f))
+            DecField("Sell max", sellMax, { sellMax = it }, Modifier.weight(1f))
+        }
+        Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
+            DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
+        }
+
+        HorizontalDivider()
+        Text("Strategy 1: Reversal zone", style = MaterialTheme.typography.titleMedium)
+        SwitchRow("Enable reversal signal", enRev) { enRev = it }
+        DecField("Reversal threshold", revThr, { revThr = it }, Modifier.fillMaxWidth())
         Text(
-            "Zones for ${Timeframes.label(cfg.timeframe)} (in IDR, same units as the MACD values on the chart). Each timeframe has its own zones because MACD values differ a lot between timeframes.",
+            "Minimum bounce of the signal line (0-100 scale) after touching a zone.",
             style = MaterialTheme.typography.bodySmall
         )
-        OutlinedTextField(
-            value = buyTxt, onValueChange = { buyTxt = it.filter { c -> c.isDigit() || c == '-' || c == '.' } },
-            label = { Text("Buy zone: signal line at or below") }, singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+
+        Text("Strategy 2: Crossover angle", style = MaterialTheme.typography.titleMedium)
+        SwitchRow("Enable crossover signal", enCross) { enCross = it }
+        DecField("Minimum crossover angle (0-90°)", angle, { angle = it }, Modifier.fillMaxWidth())
+
+        Text("Signal combination", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = logic == LogicMode.AND, onClick = { logic = LogicMode.AND }, label = { Text("AND") })
+            FilterChip(selected = logic == LogicMode.OR, onClick = { logic = LogicMode.OR }, label = { Text("OR") })
+        }
+        Text(
+            "AND: both strategies must give the same signal. OR: either one is enough (if they disagree, no signal). With one strategy switched off, only the active one is used.",
+            style = MaterialTheme.typography.bodySmall
         )
-        OutlinedTextField(
-            value = sellTxt, onValueChange = { sellTxt = it.filter { c -> c.isDigit() || c == '-' || c == '.' } },
-            label = { Text("Sell zone: signal line at or above") }, singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+
         Button(
             onClick = {
-                val bothEmpty = buyTxt.isBlank() && sellTxt.isBlank()
-                val f = fastTxt.toIntOrNull()
-                val sl = slowTxt.toIntOrNull()
-                val sg = sigTxt.toIntOrNull()
-                val b = buyTxt.trim().toDoubleOrNull()
-                val z = sellTxt.trim().toDoubleOrNull()
-                val err = StrategyValidator.validate(f, sl, sg, b, z, zonesText = !bothEmpty)
+                val f = fast.toIntOrNull()
+                val sl = slow.toIntOrNull()
+                val sg = sig.toIntOrNull()
+                val lb = lookback.toIntOrNull()
+                val bMin = buyMin.toDoubleOrNull()
+                val bMax = buyMax.toDoubleOrNull()
+                val sMin = sellMin.toDoubleOrNull()
+                val sMax = sellMax.toDoubleOrNull()
+                val thr = revThr.toDoubleOrNull()
+                val ang = angle.toDoubleOrNull()
+                val err = StrategyValidator.validate(f, sl, sg, lb, bMin, bMax, sMin, sMax, thr, ang, enRev, enCross)
                 if (err != null) {
-                    stratMsg = err
+                    msg = err
                 } else {
-                    strategyStore.saveSettings(
-                        MacdParams(f!!, sl!!, sg!!), modeSel,
-                        if (bothEmpty) null else b, if (bothEmpty) null else z
+                    strategyStore.saveStrategy(
+                        StrategyConfig(
+                            timeframe = tf, macd = MacdParams(f!!, sl!!, sg!!), normLookback = lb!!,
+                            buyZoneMin = bMin!!, buyZoneMax = bMax!!, sellZoneMin = sMin!!, sellZoneMax = sMax!!,
+                            enableReversal = enRev, reversalThreshold = thr!!,
+                            enableCrossover = enCross, minCrossoverAngle = ang!!, logicMode = logic
+                        )
                     )
-                    stratMsg = "Saved and applied to the Dashboard."
+                    msg = "Saved and applied to the Dashboard."
                 }
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text("Save strategy settings") }
-        if (stratMsg.isNotEmpty()) Text(stratMsg, style = MaterialTheme.typography.bodyMedium)
+        if (msg.isNotEmpty()) Text(msg, style = MaterialTheme.typography.bodyMedium)
+    }
+}
 
-        HorizontalDivider()
+@Composable
+private fun ExecutionTab(strategyStore: StrategyStore) {
+    val ex by strategyStore.execution.collectAsState()
+    var mode by remember(ex) { mutableStateOf(ex.mode) }
+    var chase by remember(ex) { mutableStateOf(fmt(ex.makerChaseCancelPct)) }
+    var mSl by remember(ex) { mutableStateOf(fmt(ex.makerStopLossPct)) }
+    var mTp by remember(ex) { mutableStateOf(fmt(ex.makerTakeProfitPct)) }
+    var l1 by remember(ex) { mutableStateOf(ex.slLevel1.toString()) }
+    var l2 by remember(ex) { mutableStateOf(ex.slLevel2.toString()) }
+    var l3 by remember(ex) { mutableStateOf(ex.slLevel3.toString()) }
+    var useSlTp by remember(ex) { mutableStateOf(ex.takerUseSlTp) }
+    var tSl by remember(ex) { mutableStateOf(fmt(ex.takerStopLossPct)) }
+    var tTp by remember(ex) { mutableStateOf(fmt(ex.takerTakeProfitPct)) }
+    var msg by remember { mutableStateOf("") }
+
+    TabColumn {
+        Text("Execution mode", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "These settings are saved now. The bot does not place orders yet: order execution arrives in a later phase.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = mode == ExecutionMode.MARKET_MAKER,
+                onClick = { mode = ExecutionMode.MARKET_MAKER }, label = { Text("Market maker") }
+            )
+            FilterChip(
+                selected = mode == ExecutionMode.MARKET_TAKER,
+                onClick = { mode = ExecutionMode.MARKET_TAKER }, label = { Text("Market taker") }
+            )
+        }
+
+        if (mode == ExecutionMode.MARKET_MAKER) {
+            Text("Market maker (limit orders)", style = MaterialTheme.typography.titleMedium)
+            DecField("Chase-cancel % (price rises above the unfilled limit buy)", chase, { chase = it }, Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DecField("Stop loss %", mSl, { mSl = it }, Modifier.weight(1f))
+                DecField("Take profit %", mTp, { mTp = it }, Modifier.weight(1f))
+            }
+            Text("Stop-loss steps (% of the order filled)", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IntField("Level 1", l1, { l1 = it }, Modifier.weight(1f))
+                IntField("Level 2", l2, { l2 = it }, Modifier.weight(1f))
+                IntField("Level 3", l3, { l3 = it }, Modifier.weight(1f))
+            }
+            Text("Level 4 is automatic at 100 % filled.", style = MaterialTheme.typography.bodySmall)
+        } else {
+            Text("Market taker (market orders)", style = MaterialTheme.typography.titleMedium)
+            SwitchRow("Use stop loss and take profit", useSlTp) { useSlTp = it }
+            Text(
+                "OFF: hold until a SELL signal, no stop loss and no take profit.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (useSlTp) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DecField("Stop loss %", tSl, { tSl = it }, Modifier.weight(1f))
+                    DecField("Take profit %", tTp, { tTp = it }, Modifier.weight(1f))
+                }
+            }
+        }
+
+        Button(
+            onClick = {
+                // The maker fields are validated even while the taker view is open, so hidden values stay safe.
+                val c = chase.toDoubleOrNull()
+                val ms = mSl.toDoubleOrNull()
+                val mt = mTp.toDoubleOrNull()
+                val a = l1.toIntOrNull()
+                val b = l2.toIntOrNull()
+                val d = l3.toIntOrNull()
+                val ts = tSl.toDoubleOrNull()
+                val tt = tTp.toDoubleOrNull()
+                val err = StrategyValidator.validateExecution(c, ms, mt, a, b, d, useSlTp, ts, tt)
+                if (err != null) {
+                    msg = err
+                } else {
+                    strategyStore.saveExecution(
+                        ExecutionConfig(
+                            mode = mode, makerChaseCancelPct = c!!, makerStopLossPct = ms!!, makerTakeProfitPct = mt!!,
+                            slLevel1 = a!!, slLevel2 = b!!, slLevel3 = d!!,
+                            takerUseSlTp = useSlTp, takerStopLossPct = ts ?: ex.takerStopLossPct,
+                            takerTakeProfitPct = tt ?: ex.takerTakeProfitPct
+                        )
+                    )
+                    msg = "Saved."
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Save execution settings") }
+        if (msg.isNotEmpty()) Text(msg, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun PaperTab(broker: PaperBroker) {
+    var paperIdr by remember { mutableStateOf("10000000") }
+    var confirmReset by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    TabColumn {
         Text("Paper trading", style = MaterialTheme.typography.titleLarge)
         Text(
             "Simulated account using real prices. It never sends real orders and is completely separate from live data.",
@@ -237,6 +425,3 @@ fun SettingsScreen(
         if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
     }
 }
-
-private fun zoneText(v: Double?): String =
-    if (v == null) "" else if (v == Math.rint(v)) v.toLong().toString() else v.toString()

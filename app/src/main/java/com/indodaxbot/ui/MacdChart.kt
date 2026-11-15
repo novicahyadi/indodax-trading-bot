@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -27,32 +29,40 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.indodaxbot.api.Candle
-import com.indodaxbot.strategy.MacdPoint
+import com.indodaxbot.strategy.DualSignal
+import com.indodaxbot.strategy.NormPoint
 import com.indodaxbot.strategy.SignalType
-import com.indodaxbot.strategy.Strategy
 import com.indodaxbot.strategy.StrategyConfig
 
 private val MacdBlue = Color(0xFF2196F3)
 private val SignalOrange = Color(0xFFFFA000)
 private val Up = Color(0xFF1B8A4B)
 private val Down = Color(0xFFC62828)
+private val BuyZoneColor = Color(0xFF00897B)
+private val SellZoneColor = Color(0xFF8E24AA)
 
-/** Candlestick price chart with the MACD panel underneath. Both share the same candle columns. */
+/**
+ * Candlestick price chart with the normalized (0-100) MACD panel underneath. Both share the same
+ * candle columns. The indicator Y axis is fixed 0-100; the BUY/SELL zone bands follow the settings
+ * and are drawn behind the MACD (blue) and signal (orange) lines.
+ */
 @Composable
-fun MacdChart(candles: List<Candle>, points: List<MacdPoint>, cfg: StrategyConfig, modifier: Modifier = Modifier) {
+fun MacdChart(candles: List<Candle>, norm: List<NormPoint>, cfg: StrategyConfig, modifier: Modifier = Modifier) {
     if (candles.size < 2) return
     val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-    val markers = remember(points, cfg) { Strategy.markers(points, cfg) }
+    val markers = remember(norm, cfg) { DualSignal.markers(norm, cfg) }
     val timeToCandle = remember(candles) { candles.withIndex().associate { it.value.timeSec to it.index } }
-    val pointByTime = remember(points) { points.associateBy { it.timeSec } }
+    val pointByTime = remember(norm) { norm.associateBy { it.timeSec } }
     val shownPoints = remember(candles, pointByTime) { candles.map { pointByTime[it.timeSec] } }
     // Markers that fall inside the visible candle window: candle index -> type.
-    val visibleMarkers = remember(markers, timeToCandle, points) {
-        markers.mapNotNull { (pi, type) -> timeToCandle[points[pi].timeSec]?.let { it to type } }
+    val visibleMarkers = remember(markers, timeToCandle, norm) {
+        markers.mapNotNull { (pi, type) -> timeToCandle[norm[pi].timeSec]?.let { it to type } }
     }
+    val panelHeight = 160f
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Price", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Price", style = MaterialTheme.typography.labelMedium, color = labelColor)
         Canvas(Modifier.fillMaxWidth().height(150.dp)) {
             drawGrid(grid)
             val lo0 = candles.minOf { it.low }
@@ -81,75 +91,72 @@ fun MacdChart(candles: List<Candle>, points: List<MacdPoint>, cfg: StrategyConfi
             }
         }
 
-        Text("MACD", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Canvas(Modifier.fillMaxWidth().height(150.dp)) {
-            drawGrid(grid)
-            val vals = shownPoints.filterNotNull()
-            if (vals.isEmpty()) return@Canvas
-            val lo0 = vals.minOf { minOf(it.macd, it.signal, it.histogram, 0.0) }
-            val hi0 = vals.maxOf { maxOf(it.macd, it.signal, it.histogram, 0.0) }
-            val pad = (hi0 - lo0).coerceAtLeast(1e-9) * 0.15
-            val lo = lo0 - pad
-            val hi = hi0 + pad
-            val h = size.height
-            val colW = size.width / candles.size
-            fun y(v: Double) = (h - ((v - lo) / (hi - lo) * h)).toFloat().coerceIn(0f, h)
-            fun x(i: Int) = (i + 0.5f) * colW
+        Text("MACD (0-100)", style = MaterialTheme.typography.labelMedium, color = labelColor)
+        Box(Modifier.fillMaxWidth().height(panelHeight.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawGrid(grid)
+                val h = size.height
+                val colW = size.width / candles.size
+                // Fixed axis: 100 at the top, 0 at the bottom.
+                fun y(v: Double) = (h - (v / 100.0 * h)).toFloat().coerceIn(0f, h)
+                fun x(i: Int) = (i + 0.5f) * colW
 
-            // Zones: BUY below its threshold, SELL above its threshold.
-            cfg.buyZone?.let { z ->
-                val yz = y(z)
-                drawRect(Up.copy(alpha = 0.14f), Offset(0f, yz), Size(size.width, h - yz))
-                drawLine(Up.copy(alpha = 0.6f), Offset(0f, yz), Offset(size.width, yz), strokeWidth = 1.5f)
-            }
-            cfg.sellZone?.let { z ->
-                val yz = y(z)
-                drawRect(Down.copy(alpha = 0.14f), Offset(0f, 0f), Size(size.width, yz))
-                drawLine(Down.copy(alpha = 0.6f), Offset(0f, yz), Offset(size.width, yz), strokeWidth = 1.5f)
-            }
-            // Zero line
-            drawLine(grid.copy(alpha = 0.35f), Offset(0f, y(0.0)), Offset(size.width, y(0.0)), strokeWidth = 1f)
+                // Zone bands first, so the lines are drawn on top of them.
+                val sellTop = y(cfg.sellZoneMax)
+                drawRect(SellZoneColor.copy(alpha = 0.22f), Offset(0f, sellTop), Size(size.width, y(cfg.sellZoneMin) - sellTop))
+                val buyTop = y(cfg.buyZoneMax)
+                drawRect(BuyZoneColor.copy(alpha = 0.22f), Offset(0f, buyTop), Size(size.width, y(cfg.buyZoneMin) - buyTop))
 
-            // Histogram bars
-            shownPoints.forEachIndexed { i, p ->
-                if (p == null) return@forEachIndexed
-                val color = (if (p.histogram >= 0) Up else Down).copy(alpha = 0.35f)
-                val y0 = y(0.0)
-                val y1 = y(p.histogram)
-                drawRect(
-                    color, Offset(x(i) - colW * 0.3f, minOf(y0, y1)),
-                    Size(colW * 0.6f, kotlin.math.abs(y1 - y0).coerceAtLeast(1f))
-                )
-            }
-
-            fun line(color: Color, value: (MacdPoint) -> Double) {
-                val path = Path()
-                var started = false
-                shownPoints.forEachIndexed { i, p ->
-                    if (p == null) return@forEachIndexed
-                    val px = x(i)
-                    val py = y(value(p))
-                    if (!started) { path.moveTo(px, py); started = true } else path.lineTo(px, py)
+                fun line(color: Color, value: (NormPoint) -> Double) {
+                    val path = Path()
+                    var started = false
+                    shownPoints.forEachIndexed { i, p ->
+                        if (p == null) return@forEachIndexed
+                        val px = x(i)
+                        val py = y(value(p))
+                        if (!started) { path.moveTo(px, py); started = true } else path.lineTo(px, py)
+                    }
+                    drawPath(path, color, style = Stroke(width = 3f))
                 }
-                drawPath(path, color, style = Stroke(width = 3f))
-            }
-            line(MacdBlue) { it.macd }
-            line(SignalOrange) { it.signal }
+                line(MacdBlue) { it.macdNorm }
+                line(SignalOrange) { it.signalNorm }
 
-            visibleMarkers.forEach { (i, type) ->
-                val p = shownPoints[i] ?: return@forEach
-                if (type == SignalType.BUY) drawTriangle(x(i), y(p.signal) + 12f, up = true, color = Up)
-                else drawTriangle(x(i), y(p.signal) - 12f, up = false, color = Down)
+                visibleMarkers.forEach { (i, type) ->
+                    val p = shownPoints[i] ?: return@forEach
+                    if (type == SignalType.BUY) drawTriangle(x(i), y(p.signalNorm) + 12f, up = true, color = Up)
+                    else drawTriangle(x(i), y(p.signalNorm) - 12f, up = false, color = Down)
+                }
             }
+            // Band captions, centered in each band (skipped when the band is too thin to hold text).
+            BandLabel("ZONA SELL", cfg.sellZoneMin, cfg.sellZoneMax, panelHeight, SellZoneColor)
+            BandLabel("ZONA BUY", cfg.buyZoneMin, cfg.buyZoneMax, panelHeight, BuyZoneColor)
+            Text("100", style = MaterialTheme.typography.labelSmall, color = labelColor, modifier = Modifier.align(Alignment.TopEnd))
+            Text("0", style = MaterialTheme.typography.labelSmall, color = labelColor, modifier = Modifier.align(Alignment.BottomEnd))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             LegendDot(MacdBlue, "MACD")
             LegendDot(SignalOrange, "Signal")
-            LegendDot(Up, "Buy zone")
-            LegendDot(Down, "Sell zone")
+            LegendDot(BuyZoneColor, "Buy zone")
+            LegendDot(SellZoneColor, "Sell zone")
         }
     }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.BandLabel(
+    text: String, zoneMin: Double, zoneMax: Double, panelHeight: Float, color: Color
+) {
+    if (zoneMax - zoneMin < 12.0) return
+    val mid = (zoneMin + zoneMax) / 2.0
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .offset(y = (panelHeight * (1f - (mid / 100.0).toFloat()) - 7f).dp)
+    )
 }
 
 private fun DrawScope.drawGrid(color: Color) {

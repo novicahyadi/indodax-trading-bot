@@ -1,22 +1,22 @@
 # Development Status
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 ## Build status
 Phase 1 built successfully on GitHub Actions (confirmed by the user, 2026-11-14).
 **Phase 2 code is written but NOT yet compiled or tested.** The next GitHub Actions run is its first check (it runs the unit tests before building the APK).
 
-## Strategy update: multi-timeframe + zone reversal (written 2026-11-14, NOT yet compiled)
-Requested by the user (reference screenshot of another app), replaces the plain crossover as the default rule. The strategy is still MACD only.
-- Timeframes 1m, 15m, 30m, 1h, 4h, 1D, 3D, 1W: pick chips on the MACD card, then tap Apply. The applied timeframe is saved.
-- Settings: Fast EMA, Slow EMA, Signal period (validated: fast 2-99 < slow 3-100, signal 2-50), signal rule (Zone reversal or Crossover), buy zone and sell zone.
-- Zone reversal rule (on closed candles only): BUY = the signal line made a low at or below the buy zone on the previous candle and now turns up. SELL = it made a high at or above the sell zone and now turns down. The turn is confirmed one candle after the low/high, so it is never repainted.
-- Zones are in IDR (same units as the MACD values) and stored PER TIMEFRAME, because MACD size differs a lot between timeframes. Only 15m has placeholder defaults (-1,000,000 / +1,000,000); other timeframes show "zones not set" and produce no signals until set. Leaving both zones empty also means no signals.
-- Chart on the card: last 80 closed candles (candlesticks), MACD panel with MACD line (blue), signal line (orange), histogram, shaded buy/sell zones and BUY/SELL markers computed with the same rule.
-- Last processed candle is tracked per configuration (timeframe + periods + rule + zones). A TradingSignal row is still unique per pair+timeframe+candle, so changing settings and getting a different signal for the very same candle is not stored twice.
-- Preferences use SharedPreferences (no extra dependency) instead of DataStore.
-- Tests added: zone reversal cases, markers, evaluator with zones, validator, config key.
-Open points: weekly/3-day candle alignment on Indodax is unverified, the gap check may report "missing candles" for 3D/1W; suggested zones from recent data are not built yet.
+## Strategy rework: normalized 0-100 indicator, dual signal (written 2026-11-15, NOT yet compiled)
+Replaces the raw +/- zones (invalid across coins with different price scales).
+- Indicator: MACD and signal line are scaled to 0-100 over a rolling window of `norm_lookback` candles (highest/lowest over both lines; range 0 gives 50/50). Closed candles only.
+- WARMING_UP until candles >= macd_slow + macd_signal + norm_lookback (default 85). The service fetches more than that.
+- Strategy 1 (reversal zone) and strategy 2 (crossover angle) follow the formulas in the request exactly; each has an on/off switch. `signal_logic_mode` AND/OR. With one switch off, only the active one counts. Choice made for OR: if the two disagree (one BUY, one SELL) the result is HOLD.
+- Settings is now in tabs: API, Strategy, Execution, Paper. The timeframe selector moved to Settings > Strategy (and is no longer on the Dashboard card, which only shows a label). All parameters have input validation (zones 0-100, buy zone below sell zone, angle 0-90, EMA ranges, lookback 10-500, at least one strategy on).
+- Execution settings (maker/taker, chase-cancel, SL/TP, SL levels 30/50/80, taker SL/TP toggle) are validated and stored, but **nothing uses them yet**: order execution is Phase 5/6.
+- Chart: indicator panel has a fixed 0-100 axis, ZONA SELL and ZONA BUY bands (follow the settings) drawn behind the blue MACD and orange signal lines. No new library.
+- Signal rows in the DB now store the normalized values (macd, signal, difference). No schema change (DB stays v3).
+- Tests: NormalizerTest (new), StrategyTest and SignalEvaluatorTest rewritten; the first BUY/SELL candles on the test wave were cross-checked with an independent Python calculation.
+Open points for the execution phase: Indodax cannot create STOP_LOSS_LIMIT orders, so the staged stop loss must be synthetic (only works while the phone and service are online); selling at the signal candle's High after cancelling the SL leaves the position unprotected until it fills; weekly/3-day candle alignment is unverified; the early part of a series is seeded EMA, so 85 candles is a minimum, not a guarantee of accuracy.
 
 ## Phase 4: Paper trading (written 2026-11-14, NOT yet compiled)
 Phase 3 was confirmed on the phone (HOLD signal, MACD - signal = histogram checks out, candle time = open time confirmed).
