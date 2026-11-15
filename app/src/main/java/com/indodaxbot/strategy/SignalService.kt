@@ -69,7 +69,7 @@ class SignalService(
                             macd = latest.macdNorm,
                             signalLine = latest.signalNorm,
                             histogram = latest.macdNorm - latest.signalNorm,
-                            closePrice = eval.latestClose ?: 0.0,
+                            closePrice = eval.signalCandle?.close ?: 0.0,
                             actionable = eval.actionable,
                             createdAtMs = nowMs
                         )
