@@ -116,9 +116,6 @@ fun SignalsSection(service: SignalService, store: StrategyStore, refreshTick: In
                         .padding(horizontal = 10.dp, vertical = 3.dp)
                 )
             }
-            if (!config.anyEnabled) {
-                Text("OFF", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
 
             Text(
                 if (eval == null) "…" else if (!config.anyEnabled) "OFF" else type.name,

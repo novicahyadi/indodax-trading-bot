@@ -1,5 +1,8 @@
 package com.indodaxbot.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -7,9 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +35,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -185,6 +193,47 @@ private fun ApiTab(store: CredentialStore, client: IndodaxClient) {
     }
 }
 
+private val SellTint = Color(0xFF8E24AA)
+private val BuyTint = Color(0xFF00897B)
+
+@Composable
+private fun SectionCard(content: @Composable () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+    }
+}
+
+/** Tinted, outlined box that groups related fields (used for the BUY and SELL zones). */
+@Composable
+private fun TintBox(tint: Color, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(tint.copy(alpha = 0.10f), shape)
+            .border(1.dp, tint.copy(alpha = 0.45f), shape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) { content() }
+}
+
+@Composable
+private fun NoteBox(container: Color, text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(container, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    )
+}
+
 @Composable
 private fun StrategyTab(strategyStore: StrategyStore) {
     val cfg by strategyStore.config.collectAsState()
@@ -202,73 +251,104 @@ private fun StrategyTab(strategyStore: StrategyStore) {
     var enCross by remember(cfg) { mutableStateOf(cfg.enableCrossover) }
     var angle by remember(cfg) { mutableStateOf(fmt(cfg.minCrossoverAngle)) }
     var logic by remember(cfg) { mutableStateOf(cfg.logicMode) }
+    var indicatorOpen by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
 
     TabColumn {
-        Text("Timeframe", style = MaterialTheme.typography.titleLarge)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Timeframes.all.forEach { t ->
-                FilterChip(selected = tf == t, onClick = { tf = t }, label = { Text(Timeframes.label(t)) })
+        SectionCard {
+            Text("Timeframe", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Timeframes.all.forEach { t ->
+                    FilterChip(selected = tf == t, onClick = { tf = t }, label = { Text(Timeframes.label(t)) })
+                }
             }
         }
 
-        HorizontalDivider()
-        Text("MACD and normalization", style = MaterialTheme.typography.titleLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            IntField("Fast EMA", fast, { fast = it }, Modifier.weight(1f))
-            IntField("Slow EMA", slow, { slow = it }, Modifier.weight(1f))
-            IntField("Signal", sig, { sig = it }, Modifier.weight(1f))
-        }
-        IntField("Normalization lookback (candles)", lookback, { lookback = it }, Modifier.fillMaxWidth())
-        Text(
-            "The indicator is scaled to 0-100 over the last N candles, so the zones work for any coin.",
-            style = MaterialTheme.typography.bodySmall
-        )
-
-        HorizontalDivider()
-        Text("Strategy 1: Reversal zone", style = MaterialTheme.typography.titleMedium)
-        SwitchRow("Enable reversal signal", enRev) { enRev = it }
-        if (enRev) {
-            Text("Zona SELL (0-100)", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DecField("Sell min", sellMin, { sellMin = it }, Modifier.weight(1f))
-                DecField("Sell max", sellMax, { sellMax = it }, Modifier.weight(1f))
+        SectionCard {
+            Row(
+                Modifier.fillMaxWidth().clickable { indicatorOpen = !indicatorOpen },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Indicator Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Customized MACD with normalization to 0-100",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(if (indicatorOpen) "▴" else "▾", style = MaterialTheme.typography.titleLarge)
             }
-            Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
-                DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
+            if (indicatorOpen) {
+                HorizontalDivider()
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IntField("Fast EMA", fast, { fast = it }, Modifier.weight(1f))
+                    IntField("Slow EMA", slow, { slow = it }, Modifier.weight(1f))
+                    IntField("Signal", sig, { sig = it }, Modifier.weight(1f))
+                }
+                IntField("Normalization lookback (candles)", lookback, { lookback = it }, Modifier.fillMaxWidth())
+                Text(
+                    "The indicator is scaled to 0-100 over the last N candles, so the zones work for any coin.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            DecField("Reversal threshold", revThr, { revThr = it }, Modifier.fillMaxWidth())
-            Text(
-                "Minimum bounce of the signal line (0-100 scale) after touching a zone.",
-                style = MaterialTheme.typography.bodySmall
-            )
         }
 
-        Text("Strategy 2: Crossover angle", style = MaterialTheme.typography.titleMedium)
-        SwitchRow("Enable crossover signal", enCross) { enCross = it }
-        if (enCross) {
-            DecField("Minimum crossover angle (0-90°)", angle, { angle = it }, Modifier.fillMaxWidth())
-        }
+        SectionCard {
+            Text("Strategies", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-        if (enRev && enCross) {
-            Text("Signal combination", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = logic == LogicMode.AND, onClick = { logic = LogicMode.AND }, label = { Text("AND") })
-                FilterChip(selected = logic == LogicMode.OR, onClick = { logic = LogicMode.OR }, label = { Text("OR") })
+            SwitchRow("Enable reversal signal in zone strategy", enRev) { enRev = it }
+            if (enRev) {
+                TintBox(SellTint) {
+                    Text("Zona SELL (0-100)", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DecField("Sell min", sellMin, { sellMin = it }, Modifier.weight(1f))
+                        DecField("Sell max", sellMax, { sellMax = it }, Modifier.weight(1f))
+                    }
+                }
+                TintBox(BuyTint) {
+                    Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
+                        DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
+                    }
+                }
+                DecField("Reversal threshold", revThr, { revThr = it }, Modifier.fillMaxWidth())
+                Text(
+                    "Minimum bounce of the signal line (0-100 scale) after touching a zone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Text(
-                "AND: both strategies must give the same signal. OR: either one is enough (if they disagree, no signal).",
-                style = MaterialTheme.typography.bodySmall
-            )
-        } else if (!enRev && !enCross) {
-            Text(
-                "Both strategies are OFF: the Dashboard shows the indicator only, with status OFF and no signals.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        } else {
-            Text("Only one strategy is on, so it is used alone.", style = MaterialTheme.typography.bodySmall)
+
+            HorizontalDivider()
+
+            SwitchRow("Enable crossover signal strategy", enCross) { enCross = it }
+            if (enCross) {
+                DecField("Minimum crossover angle (0-90°)", angle, { angle = it }, Modifier.fillMaxWidth())
+            }
+
+            if (enRev && enCross) {
+                HorizontalDivider()
+                Text("Signal combination", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = logic == LogicMode.AND, onClick = { logic = LogicMode.AND }, label = { Text("AND") })
+                    FilterChip(selected = logic == LogicMode.OR, onClick = { logic = LogicMode.OR }, label = { Text("OR") })
+                }
+                Text(
+                    "AND: both strategies must give the same signal. OR: either one is enough (if they disagree, no signal).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (!enRev && !enCross) {
+                NoteBox(
+                    MaterialTheme.colorScheme.tertiaryContainer,
+                    "Both strategies are OFF: the Dashboard shows the indicator only, with status OFF and no signals."
+                )
+            } else {
+                NoteBox(MaterialTheme.colorScheme.primaryContainer, "Only one strategy is on, so it is used alone.")
+            }
         }
 
         Button(
@@ -286,6 +366,7 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                 val ang = if (enCross) angle.toDoubleOrNull() else cfg.minCrossoverAngle
                 val err = StrategyValidator.validate(f, sl, sg, lb, bMin, bMax, sMin, sMax, thr, ang, enRev, enCross)
                 if (err != null) {
+                    indicatorOpen = true   // the error may be about a field inside the collapsed card
                     msg = err
                 } else {
                     strategyStore.saveStrategy(

@@ -16,6 +16,7 @@ Replaces the raw +/- zones (invalid across coins with different price scales).
 - Chart: indicator panel has a fixed 0-100 axis, ZONA SELL and ZONA BUY bands (follow the settings) drawn behind the blue MACD and orange signal lines. No new library.
 - Signal rows in the DB now store the normalized values (macd, signal, difference). No schema change (DB stays v3).
 - Tests: NormalizerTest (new), StrategyTest and SignalEvaluatorTest rewritten; the first BUY/SELL candles on the test wave were cross-checked with an independent Python calculation.
+UI refinement (2026-11-15): Settings > Strategy uses cards (timeframe, collapsible Indicator Settings, Strategies with tinted zone boxes); the duplicate OFF text under the signal card title was removed (only the badge remains). Both strategies OFF is allowed. 5m timeframe added (Indodax support unverified).
 Open points for the execution phase: Indodax cannot create STOP_LOSS_LIMIT orders, so the staged stop loss must be synthetic (only works while the phone and service are online); selling at the signal candle's High after cancelling the SL leaves the position unprotected until it fills; weekly/3-day candle alignment is unverified; the early part of a series is seeded EMA, so 85 candles is a minimum, not a guarantee of accuracy.
 
 ## Phase 4: Paper trading (written 2026-11-14, NOT yet compiled)
