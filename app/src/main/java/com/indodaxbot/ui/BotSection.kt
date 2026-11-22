@@ -141,7 +141,7 @@ fun PortfolioCard(c: AppContainer, bid: Long?) {
     val balance by balFlow.collectAsState(initial = null)
     val positions by posFlow.collectAsState(initial = emptyList())
     val s = remember(balance, positions, bid) {
-        PortfolioCalc.compute(balance, positions, bid, System.currentTimeMillis(), startOfToday(), c.broker.feeRates.takerBps)
+        PortfolioCalc.compute(balance, positions, bid, System.currentTimeMillis(), startOfToday(), c.broker.feeRates.takerSellBps)
     }
 
     Card(

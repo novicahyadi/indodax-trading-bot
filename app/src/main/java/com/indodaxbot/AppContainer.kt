@@ -19,7 +19,7 @@ class AppContainer(context: Context) {
     val db = AppDatabase.get(context)
     val strategyStore = StrategyStore(context)
     val signalService = SignalService(client, db, config = { strategyStore.current })
-    val broker = PaperBroker(db)
+    val broker = PaperBroker(db, fees = { strategyStore.fees.value })
     val botStore = BotStore(context)
     val engine = BotEngine(client, signalService, broker, strategyStore, db)
 

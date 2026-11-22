@@ -16,7 +16,9 @@ import com.indodaxbot.trading.Money
 import com.indodaxbot.trading.OrderStatus
 import com.indodaxbot.trading.PaperBroker
 import com.indodaxbot.trading.PaperResult
+import com.indodaxbot.trading.PositionMath
 import com.indodaxbot.trading.SignalCandle
+import com.indodaxbot.trading.toState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -230,7 +232,10 @@ class BotEngine(
             buyOrderId = buy?.clientOrderId,
             buyLimitPrice = buy?.priceIdr ?: 0L,
             buyFilledPct = buy?.let { it.filledSats * 100.0 / it.qtySats } ?: 100.0,
-            sellOrderActive = sell != null
+            sellOrderActive = sell != null,
+            netPnlPct = PositionMath.pnlPercent(
+                PositionMath.totalPnl(pos.toState(), bid, broker.feeRates.takerSellBps), pos.toState()
+            )
         )
     }
 

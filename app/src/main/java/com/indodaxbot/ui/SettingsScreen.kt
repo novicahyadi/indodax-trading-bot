@@ -57,6 +57,7 @@ import com.indodaxbot.strategy.StrategyConfig
 import com.indodaxbot.strategy.StrategyStore
 import com.indodaxbot.strategy.StrategyValidator
 import com.indodaxbot.strategy.Timeframes
+import com.indodaxbot.trading.FeeRates
 import com.indodaxbot.trading.PaperBroker
 import com.indodaxbot.trading.PaperResult
 import kotlinx.coroutines.launch
@@ -407,6 +408,14 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
     var tSl by remember(ex) { mutableStateOf(fmt(ex.takerStopLossPct)) }
     var tTp by remember(ex) { mutableStateOf(fmt(ex.takerTakeProfitPct)) }
     var orderSize by remember(ex) { mutableStateOf(ex.orderSizeIdr.toString()) }
+    var useMinMax by remember(ex) { mutableStateOf(ex.takerUseMinMax) }
+    var minTp by remember(ex) { mutableStateOf(fmt(ex.takerMinTakeProfitPct)) }
+    var maxSl by remember(ex) { mutableStateOf(fmt(ex.takerMaxStopLossPct)) }
+    val fees by strategyStore.fees.collectAsState()
+    var fMakerBuy by remember(fees) { mutableStateOf(fmt(fees.makerBuyBps / 100.0)) }
+    var fMakerSell by remember(fees) { mutableStateOf(fmt(fees.makerSellBps / 100.0)) }
+    var fTakerBuy by remember(fees) { mutableStateOf(fmt(fees.takerBuyBps / 100.0)) }
+    var fTakerSell by remember(fees) { mutableStateOf(fmt(fees.takerSellBps / 100.0)) }
     var msg by remember { mutableStateOf("") }
 
     TabColumn {
@@ -443,7 +452,10 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
             Text("Level 4 is automatic at 100 % filled.", style = MaterialTheme.typography.bodySmall)
         } else {
             Text("Market taker (market orders)", style = MaterialTheme.typography.titleMedium)
-            SwitchRow("Use stop loss and take profit", useSlTp) { useSlTp = it }
+            SwitchRow("Use stop loss and take profit", useSlTp) {
+                useSlTp = it
+                if (it) useMinMax = false     // the two options exclude each other
+            }
             Text(
                 "OFF: hold until a SELL signal, no stop loss and no take profit.",
                 style = MaterialTheme.typography.bodySmall
@@ -454,6 +466,38 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
                     DecField("Take profit %", tTp, { tTp = it }, Modifier.weight(1f))
                 }
             }
+            HorizontalDivider()
+            SwitchRow("Minimum take profit and maximum stop loss", useMinMax) {
+                useMinMax = it
+                if (it) useSlTp = false       // the two options exclude each other
+            }
+            Text(
+                "Trades still follow the signals. A SELL signal is only obeyed when the position is at least the minimum take profit in profit, or at least the maximum stop loss in loss. In between, the SELL signal is ignored and the position is held. P/L is measured after fees, as on the Positions screen. Cannot be combined with the option above.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (useMinMax) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DecField("Minimum take profit %", minTp, { minTp = it }, Modifier.weight(1f))
+                    DecField("Maximum stop loss %", maxSl, { maxSl = it }, Modifier.weight(1f))
+                }
+            }
+        }
+
+        HorizontalDivider()
+        Text("Trading fees (%)", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Used for paper trading now and for live P/L estimates later. Check your real rates in your Indodax trade history.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text("Buy", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DecField("Maker (limit)", fMakerBuy, { fMakerBuy = it }, Modifier.weight(1f))
+            DecField("Taker (market)", fTakerBuy, { fTakerBuy = it }, Modifier.weight(1f))
+        }
+        Text("Sell", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DecField("Maker (limit)", fMakerSell, { fMakerSell = it }, Modifier.weight(1f))
+            DecField("Taker (market)", fTakerSell, { fTakerSell = it }, Modifier.weight(1f))
         }
 
         Button(
@@ -468,7 +512,15 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
                 val ts = tSl.toDoubleOrNull()
                 val tt = tTp.toDoubleOrNull()
                 val size = orderSize.toLongOrNull()
-                val err = StrategyValidator.validateExecution(c, ms, mt, a, b, d, useSlTp, ts, tt, size)
+                val mm = if (useMinMax) minTp.toDoubleOrNull() else ex.takerMinTakeProfitPct
+                val xs = if (useMinMax) maxSl.toDoubleOrNull() else ex.takerMaxStopLossPct
+                val fmb = fMakerBuy.toDoubleOrNull()
+                val fms = fMakerSell.toDoubleOrNull()
+                val ftb = fTakerBuy.toDoubleOrNull()
+                val fts = fTakerSell.toDoubleOrNull()
+                val err = StrategyValidator.validateExecution(
+                    c, ms, mt, a, b, d, useSlTp, ts, tt, size, useMinMax, mm, xs
+                ) ?: StrategyValidator.validateFees(fmb, fms, ftb, fts)
                 if (err != null) {
                     msg = err
                 } else {
@@ -478,7 +530,14 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
                             slLevel1 = a!!, slLevel2 = b!!, slLevel3 = d!!,
                             takerUseSlTp = useSlTp, takerStopLossPct = ts ?: ex.takerStopLossPct,
                             takerTakeProfitPct = tt ?: ex.takerTakeProfitPct,
-                            orderSizeIdr = size!!
+                            orderSizeIdr = size!!,
+                            takerUseMinMax = useMinMax, takerMinTakeProfitPct = mm!!, takerMaxStopLossPct = xs!!
+                        )
+                    )
+                    strategyStore.saveFees(
+                        FeeRates(
+                            makerBuyBps = Math.round(fmb!! * 100).toInt(), makerSellBps = Math.round(fms!! * 100).toInt(),
+                            takerBuyBps = Math.round(ftb!! * 100).toInt(), takerSellBps = Math.round(fts!! * 100).toInt()
                         )
                     )
                     msg = "Saved."

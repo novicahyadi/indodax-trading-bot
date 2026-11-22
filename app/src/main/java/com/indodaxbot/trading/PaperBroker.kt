@@ -12,11 +12,14 @@ import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
- * Fee rates in basis points (51 = 0.51%).
+ * Fee rates in basis points (51 = 0.51%), set by the user in Settings > Execution.
  * PLACEHOLDERS: the real Indodax maker/taker rates have not been verified yet. Compare them with a
  * real trade history before relying on paper P/L.
  */
-data class PaperFees(val takerBps: Int = 51, val makerBps: Int = 30)
+data class FeeRates(
+    val makerBuyBps: Int = 30, val makerSellBps: Int = 30,
+    val takerBuyBps: Int = 51, val takerSellBps: Int = 51
+)
 
 sealed class PaperResult {
     data class Ok(val message: String) : PaperResult()
@@ -34,14 +37,14 @@ sealed class PaperResult {
  */
 class PaperBroker(
     private val db: AppDatabase,
-    private val fees: PaperFees = PaperFees(),
+    private val fees: () -> FeeRates = { FeeRates() },
     private val pair: String = "BTCIDR",
     private val clock: () -> Long = { System.currentTimeMillis() }
 ) {
     private val dao get() = db.tradingDao()
     private val mutex = Mutex()
 
-    val feeRates: PaperFees get() = fees
+    val feeRates: FeeRates get() = fees()
 
     fun positions(): Flow<List<Position>> = dao.observePositions(MODE)
     fun orders(): Flow<List<TradingOrder>> = dao.observeOrders(MODE)
@@ -78,11 +81,12 @@ class PaperBroker(
             if (budgetIdr < MIN_ORDER_IDR) return@withTransaction reject("Minimum order is Rp$MIN_ORDER_IDR")
             val bal = account()
             if (bal.availableIdr < budgetIdr) return@withTransaction reject("Insufficient paper IDR")
-            val sats = Money.satsForBudget(budgetIdr, askPrice, fees.takerBps)
+            val rates = fees()
+            val sats = Money.satsForBudget(budgetIdr, askPrice, rates.takerBuyBps)
             if (sats <= 0) return@withTransaction reject("Amount too small")
             val now = clock()
             val cost = Money.cost(askPrice, sats)
-            val fee = Money.fee(cost, fees.takerBps)
+            val fee = Money.fee(cost, rates.takerBuyBps)
 
             val state = PositionMath.applyBuy(PositionState(targetQtySats = sats), askPrice, sats, fee)
             val posId = dao.insertPosition(newPosition(state, now))
@@ -103,11 +107,12 @@ class PaperBroker(
             if (budgetIdr < MIN_ORDER_IDR) return@withTransaction reject("Minimum order is Rp$MIN_ORDER_IDR")
             val bal = account()
             if (bal.availableIdr < budgetIdr) return@withTransaction reject("Insufficient paper IDR")
-            val sats = Money.satsForBudget(budgetIdr, limitPrice, fees.makerBps)
+            val rates = fees()
+            val sats = Money.satsForBudget(budgetIdr, limitPrice, rates.makerBuyBps)
             if (sats <= 0) return@withTransaction reject("Amount too small")
             val now = clock()
             val cost = Money.cost(limitPrice, sats)
-            val reserve = cost + Money.fee(cost, fees.makerBps)
+            val reserve = cost + Money.fee(cost, rates.makerBuyBps)
 
             val posId = dao.insertPosition(newPosition(PositionState(targetQtySats = sats), now))
             dao.insertOrder(
@@ -139,7 +144,7 @@ class PaperBroker(
             if (bal.availableBtcSats < qty) return@withTransaction reject("Insufficient paper BTC")
             val now = clock()
             val value = Money.cost(bidPrice, qty)
-            val fee = Money.fee(value, fees.takerBps)
+            val fee = Money.fee(value, fees().takerSellBps)
 
             val newState = PositionMath.applySell(pos.toState(), bidPrice, qty, fee)
             dao.updatePosition(pos.withState(newState, now))
@@ -238,7 +243,8 @@ class PaperBroker(
         val bal = account()
         val pos = dao.position(o.positionId) ?: error("Position missing for order ${o.clientOrderId}")
         val cost = Money.cost(o.priceIdr, qty)
-        val fee = Money.fee(cost, fees.makerBps)
+        val rates = fees()
+        val fee = Money.fee(cost, if (o.side == "BUY") rates.makerBuyBps else rates.makerSellBps)
         val filled = o.filledSats + qty
         val to = if (filled >= o.qtySats) OrderStatus.FILLED else OrderStatus.PARTIALLY_FILLED
         OrderStateMachine.require(from, to)

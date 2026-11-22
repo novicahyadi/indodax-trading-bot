@@ -77,6 +77,17 @@ object PositionMath {
         return value - Money.fee(value, sellFeeBps) - s.remainingCostIdr
     }
 
+    /**
+     * Bid price at which selling everything held gives exactly zero P/L, i.e. the price that covers the
+     * buy cost (incl. buy fee) AND the estimated sell fee. Null when nothing is held.
+     */
+    fun breakEvenPrice(s: PositionState, sellFeeBps: Int): Long? {
+        if (s.holdingSats <= 0 || sellFeeBps >= 10_000) return null
+        return BigDecimal(s.remainingCostIdr).multiply(BigDecimal(Money.SATS_PER_BTC)).multiply(BigDecimal(10_000))
+            .divide(BigDecimal(s.holdingSats).multiply(BigDecimal(10_000 - sellFeeBps)), 0, RoundingMode.CEILING)
+            .longValueExact()
+    }
+
     /** Position P/L = realized + unrealized (partial buys count immediately, no waiting for 100% fill). */
     fun totalPnl(s: PositionState, bidPrice: Long, sellFeeBps: Int): Long =
         s.realizedPnlIdr + unrealized(s, bidPrice, sellFeeBps)

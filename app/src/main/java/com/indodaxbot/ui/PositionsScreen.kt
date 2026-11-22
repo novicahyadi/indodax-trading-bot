@@ -155,7 +155,7 @@ fun PositionsScreen(client: IndodaxClient, broker: PaperBroker) {
                 p = p,
                 orders = orders.filter { it.positionId == p.id },
                 bid = bid, last = last,
-                takerBps = broker.feeRates.takerBps,
+                takerBps = broker.feeRates.takerSellBps,
                 onMarketSell = { scope.launch { message = broker.marketSell(p.id, null, bid).text() } },
                 onLimitSell = { scope.launch { message = broker.placeLimitSell(p.id, null, bid + bid * 1 / 100, bid).text() } },
                 onCancel = { id -> scope.launch { message = broker.cancelOrder(id).text() } }
@@ -251,7 +251,10 @@ private fun PositionCard(
 
             HorizontalDivider()
             Line("Avg entry", if (s.buyQtySats > 0) rp(s.avgEntryPrice) else "—")
-            Line("Current price", if (last > 0) rp(last) else "—")
+            if (!s.isClosed) {
+                Line("Current price", if (last > 0) rp(last) else "—")
+                Line("Break-even price", PositionMath.breakEvenPrice(s, takerBps)?.let { rp(it) } ?: "—")
+            }
             Line("Take profit", p.tpPrice?.let { rp(it) } ?: "—")
             Line("Stop loss", p.slPrice?.let { rp(it) } ?: "—")
             Line("Total qty", "${Money.btcString(s.targetQtySats)} BTC")

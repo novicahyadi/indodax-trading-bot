@@ -1,6 +1,7 @@
 package com.indodaxbot.strategy
 
 import android.content.Context
+import com.indodaxbot.trading.FeeRates
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -13,10 +14,27 @@ class StrategyStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("strategy_prefs", Context.MODE_PRIVATE)
     private val _config = MutableStateFlow(loadStrategy())
     private val _execution = MutableStateFlow(loadExecution())
+    private val _fees = MutableStateFlow(loadFees())
 
     val config: StateFlow<StrategyConfig> = _config
     val execution: StateFlow<ExecutionConfig> = _execution
+    /** Trading fees, shared by paper trading now and live trading later. */
+    val fees: StateFlow<FeeRates> = _fees
     val current: StrategyConfig get() = _config.value
+
+    fun saveFees(f: FeeRates) {
+        prefs.edit()
+            .putInt(K_F_MB, f.makerBuyBps).putInt(K_F_MS, f.makerSellBps)
+            .putInt(K_F_TB, f.takerBuyBps).putInt(K_F_TS, f.takerSellBps)
+            .apply()
+        _fees.value = f
+    }
+
+    private fun loadFees(): FeeRates {
+        val d = FeeRates()
+        fun bps(key: String, def: Int) = prefs.getInt(key, def).takeIf { it in 0..500 } ?: def
+        return FeeRates(bps(K_F_MB, d.makerBuyBps), bps(K_F_MS, d.makerSellBps), bps(K_F_TB, d.takerBuyBps), bps(K_F_TS, d.takerSellBps))
+    }
 
     fun saveStrategy(c: StrategyConfig) {
         prefs.edit()
@@ -43,6 +61,9 @@ class StrategyStore(context: Context) {
             .putString(K_T_SL, e.takerStopLossPct.toString())
             .putString(K_T_TP, e.takerTakeProfitPct.toString())
             .putLong(K_ORDER, e.orderSizeIdr)
+            .putBoolean(K_T_MM, e.takerUseMinMax)
+            .putString(K_T_MINTP, e.takerMinTakeProfitPct.toString())
+            .putString(K_T_MAXSL, e.takerMaxStopLossPct.toString())
             .apply()
         _execution.value = e
     }
@@ -101,12 +122,16 @@ class StrategyStore(context: Context) {
             takerUseSlTp = prefs.getBoolean(K_T_USE, d.takerUseSlTp),
             takerStopLossPct = dbl(K_T_SL, d.takerStopLossPct),
             takerTakeProfitPct = dbl(K_T_TP, d.takerTakeProfitPct),
-            orderSizeIdr = prefs.getLong(K_ORDER, d.orderSizeIdr)
+            orderSizeIdr = prefs.getLong(K_ORDER, d.orderSizeIdr),
+            takerUseMinMax = prefs.getBoolean(K_T_MM, d.takerUseMinMax),
+            takerMinTakeProfitPct = dbl(K_T_MINTP, d.takerMinTakeProfitPct),
+            takerMaxStopLossPct = dbl(K_T_MAXSL, d.takerMaxStopLossPct)
         )
         val err = StrategyValidator.validateExecution(
             loaded.makerChaseCancelPct, loaded.makerStopLossPct, loaded.makerTakeProfitPct,
             loaded.slLevel1, loaded.slLevel2, loaded.slLevel3,
-            loaded.takerUseSlTp, loaded.takerStopLossPct, loaded.takerTakeProfitPct, loaded.orderSizeIdr
+            loaded.takerUseSlTp, loaded.takerStopLossPct, loaded.takerTakeProfitPct, loaded.orderSizeIdr,
+            loaded.takerUseMinMax, loaded.takerMinTakeProfitPct, loaded.takerMaxStopLossPct
         )
         return if (err == null) loaded else d
     }
@@ -137,5 +162,12 @@ class StrategyStore(context: Context) {
         const val K_T_SL = "taker_stop_loss_pct"
         const val K_T_TP = "taker_take_profit_pct"
         const val K_ORDER = "order_size_idr"
+        const val K_T_MM = "taker_use_min_tp_max_sl"
+        const val K_T_MINTP = "taker_min_take_profit_pct"
+        const val K_T_MAXSL = "taker_max_stop_loss_pct"
+        const val K_F_MB = "fee_maker_buy_bps"
+        const val K_F_MS = "fee_maker_sell_bps"
+        const val K_F_TB = "fee_taker_buy_bps"
+        const val K_F_TS = "fee_taker_sell_bps"
     }
 }

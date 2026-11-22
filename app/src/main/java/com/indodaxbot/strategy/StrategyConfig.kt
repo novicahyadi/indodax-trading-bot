@@ -63,7 +63,15 @@ data class ExecutionConfig(
     val takerStopLossPct: Double = 5.0,
     val takerTakeProfitPct: Double = 10.0,
     /** IDR spent per BUY (both modes). */
-    val orderSizeIdr: Long = 1_000_000L
+    val orderSizeIdr: Long = 1_000_000L,
+    /**
+     * Taker only, mutually exclusive with [takerUseSlTp]. A SELL signal is only obeyed when the position's
+     * net P/L (after fees, as shown on the Positions screen) is at least +[takerMinTakeProfitPct] or at
+     * most -[takerMaxStopLossPct]; in between, the SELL signal is ignored and the position is held.
+     */
+    val takerUseMinMax: Boolean = false,
+    val takerMinTakeProfitPct: Double = 3.0,
+    val takerMaxStopLossPct: Double = 2.0
 )
 
 object StrategyValidator {
@@ -104,12 +112,22 @@ object StrategyValidator {
         return null
     }
 
+    /** Fee values in percent (0.51 = 0.51 %). Each must be from 0 to 5. */
+    fun validateFees(makerBuy: Double?, makerSell: Double?, takerBuy: Double?, takerSell: Double?): String? {
+        val all = listOf(makerBuy, makerSell, takerBuy, takerSell)
+        if (all.any { it == null || !it.isFinite() || it < 0.0 || it > 5.0 }) {
+            return "Fees must be numbers from 0 to 5 (%)"
+        }
+        return null
+    }
+
     @Suppress("LongParameterList")
     fun validateExecution(
         chase: Double?, makerSl: Double?, makerTp: Double?,
         l1: Int?, l2: Int?, l3: Int?,
         takerUseSlTp: Boolean, takerSl: Double?, takerTp: Double?,
-        orderSizeIdr: Long? = 1_000_000L
+        orderSizeIdr: Long? = 1_000_000L,
+        takerUseMinMax: Boolean = false, takerMinTp: Double? = 3.0, takerMaxSl: Double? = 2.0
     ): String? {
         fun badPct(v: Double?, max: Double) = v == null || !v.isFinite() || v <= 0.0 || v > max
         if (orderSizeIdr == null || orderSizeIdr < 50_000L || orderSizeIdr > 1_000_000_000L) {
@@ -121,6 +139,13 @@ object StrategyValidator {
         if (l1 == null || l2 == null || l3 == null) return "Fill all three stop-loss levels"
         if (l1 < 1 || l1 >= l2 || l2 >= l3 || l3 >= 100) {
             return "Stop-loss levels must increase and stay below 100 (level 4 is 100 % automatically)"
+        }
+        if (takerUseSlTp && takerUseMinMax) {
+            return "Use stop loss and take profit and Minimum TP / Maximum SL cannot be on together"
+        }
+        if (takerUseMinMax) {
+            if (badPct(takerMinTp, 1000.0)) return "Minimum take profit must be above 0 %"
+            if (badPct(takerMaxSl, 99.0)) return "Maximum stop loss must be above 0 and below 100 %"
         }
         if (takerUseSlTp) {
             if (badPct(takerSl, 99.0)) return "Taker stop loss must be above 0 and below 100 %"

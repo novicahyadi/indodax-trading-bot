@@ -162,6 +162,25 @@ class StrategyTest {
         assertTrue(DualSignal.crossoverMarkers(n, cfg.copy(enableCrossover = false)).isEmpty())
     }
 
+    @Test fun minMaxOption_validation() {
+        fun v(use: Boolean, both: Boolean = false, tp: Double? = 3.0, sl: Double? = 2.0) =
+            StrategyValidator.validateExecution(5.0, 5.0, 10.0, 30, 50, 80, both, 5.0, 10.0, 1_000_000L, use, tp, sl)
+        assertNull(v(false))
+        assertNull(v(true))
+        assertNotNull(v(true, both = true))          // cannot be combined with SL/TP
+        assertNotNull(v(true, tp = 0.0))
+        assertNotNull(v(true, sl = null))
+        assertNull(v(false, tp = null, sl = null))   // ignored while OFF
+    }
+
+    @Test fun feeValidation() {
+        assertNull(StrategyValidator.validateFees(0.3, 0.3, 0.51, 0.51))
+        assertNull(StrategyValidator.validateFees(0.0, 0.0, 0.0, 0.0))
+        assertNotNull(StrategyValidator.validateFees(0.3, 0.3, 0.51, null))
+        assertNotNull(StrategyValidator.validateFees(-0.1, 0.3, 0.51, 0.51))
+        assertNotNull(StrategyValidator.validateFees(0.3, 5.1, 0.51, 0.51))
+    }
+
     @Test fun timeframes_labels() {
         assertEquals("5m", Timeframes.label("5"))
         assertEquals("1h", Timeframes.label("60"))

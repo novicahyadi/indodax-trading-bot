@@ -39,7 +39,8 @@ class PortfolioCalcTest {
     fun equityValuesBtcAtBid() {
         val bal = PaperBalance(idrBalance = 1_000_000, lockedIdr = 0, btcSats = 50_000_000, lockedBtcSats = 0, initialIdr = 1_000_000, updatedAtMs = now)
         val s = PortfolioCalc.compute(bal, emptyList(), 1_000_000_000, now, now, 51)
-        assertEquals(1_000_000L + 500_000_000L, s.equityIdr)
+        // 500,000,000 of BTC minus the 0.51% estimated sell fee (2,550,000)
+        assertEquals(1_000_000L + 500_000_000L - 2_550_000L, s.equityIdr)
         assertNull(s.winRatePct)
     }
 
@@ -48,5 +49,25 @@ class PortfolioCalcTest {
         val s = PortfolioCalc.compute(null, emptyList(), null, now, now, 51)
         assertEquals(0L, s.equityIdr)
         assertEquals(0L, s.totalPnlIdr)
+    }
+
+    @Test
+    fun totalPnl_equalsRealizedPlusUnrealized_forAnOpenPosition() {
+        // Buy 0.00084088 BTC at 1,183,182,000 (taker 51 bps), still held. Cash left = 10,000,000 - cost - fee.
+        val sats = 84_088L
+        val cost = Money.cost(1_183_182_000, sats)
+        val fee = Money.fee(cost, 51)
+        val state = PositionMath.applyBuy(PositionState(targetQtySats = sats), 1_183_182_000, sats, fee)
+        val p = pos("OPEN", 0, null).copy(
+            targetQtySats = state.targetQtySats, buyQtySats = state.buyQtySats, buyNotionalIdr = state.buyNotionalIdr,
+            buyFeesIdr = state.buyFeesIdr, remainingCostIdr = state.remainingCostIdr
+        )
+        val bal = PaperBalance(
+            idrBalance = 10_000_000 - cost - fee, lockedIdr = 0, btcSats = sats, lockedBtcSats = 0,
+            initialIdr = 10_000_000, updatedAtMs = now
+        )
+        val s = PortfolioCalc.compute(bal, listOf(p), 1_189_170_000, now, now, 51)
+        assertEquals(s.realizedAllTimeIdr + s.unrealizedIdr, s.totalPnlIdr)
+        assertEquals(true, s.totalPnlIdr < 0)   // price is above the entry, but two 0.51% fees are larger
     }
 }

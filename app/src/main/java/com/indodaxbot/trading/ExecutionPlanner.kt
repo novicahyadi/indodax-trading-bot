@@ -15,7 +15,9 @@ data class CycleView(
     /** Percent of the buy order that is filled (100 when no buy order is active). */
     val buyFilledPct: Double = 100.0,
     /** True while an exit limit sell is waiting (stop loss and take profit are off in that state). */
-    val sellOrderActive: Boolean = false
+    val sellOrderActive: Boolean = false,
+    /** Net P/L of the held position in percent of its total cost, after fees (same as the Positions screen). */
+    val netPnlPct: Double = 0.0
 ) {
     val hasPosition: Boolean get() = positionId != null
 }
@@ -78,7 +80,19 @@ object ExecutionPlanner {
             else listOf(Action.Skip("SELL ignored: nothing to sell"))
         }
         return when (ex.mode) {
-            ExecutionMode.MARKET_TAKER -> listOf(Action.CancelAllOrders, Action.MarketSellAll("SELL signal"))
+            ExecutionMode.MARKET_TAKER -> {
+                val pct = cycle.netPnlPct
+                if (ex.takerUseMinMax && pct < ex.takerMinTakeProfitPct && pct > -ex.takerMaxStopLossPct) {
+                    listOf(
+                        Action.Skip(
+                            "SELL signal ignored: net P/L ${"%.2f".format(pct)}% is between " +
+                                "-${ex.takerMaxStopLossPct}% (max stop loss) and +${ex.takerMinTakeProfitPct}% (min take profit)"
+                        )
+                    )
+                } else {
+                    listOf(Action.CancelAllOrders, Action.MarketSellAll("SELL signal"))
+                }
+            }
             ExecutionMode.MARKET_MAKER ->
                 if (m.bid >= candle.high) {
                     listOf(Action.CancelAllOrders, Action.MarketSellAll("SELL signal, bid already at or above signal high"))

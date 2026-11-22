@@ -4,7 +4,7 @@ import com.indodaxbot.data.PaperBalance
 import com.indodaxbot.data.Position
 
 data class PortfolioSummary(
-    val equityIdr: Long,            // IDR + BTC valued at the bid
+    val equityIdr: Long,            // IDR + BTC valued at the bid MINUS the estimated sell fee (what you would get by selling now)
     val idrBalance: Long,
     val btcSats: Long,
     val initialIdr: Long,
@@ -27,7 +27,9 @@ object PortfolioCalc {
         val sats = balance?.btcSats ?: 0L
         val initial = balance?.initialIdr ?: 0L
         val price = bid ?: 0L
-        val equity = idr + (if (price > 0) Money.cost(price, sats) else 0L)
+        // Net liquidation value, so that total P/L = realized + unrealized (both are after fees).
+        val btcValue = if (price > 0) Money.cost(price, sats) else 0L
+        val equity = idr + btcValue - Money.fee(btcValue, sellFeeBps)
         val closed = positions.filter { it.status == "CLOSED" }
         val dayAgo = nowMs - 24L * 3600 * 1000
         val unrealized = if (price > 0) positions.filter { it.status == "OPEN" }

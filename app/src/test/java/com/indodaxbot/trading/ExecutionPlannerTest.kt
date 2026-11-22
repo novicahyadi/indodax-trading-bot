@@ -62,6 +62,39 @@ class ExecutionPlannerTest {
             ExecutionPlanner.onSignal(SignalType.SELL, holding(), candle, m, taker)
         )
 
+    // ---- taker, minimum take profit / maximum stop loss gate on SELL signals
+    private val minMax = taker.copy(takerUseMinMax = true, takerMinTakeProfitPct = 3.0, takerMaxStopLossPct = 2.0)
+
+    private fun sellAt(pct: Double, ex: ExecutionConfig) =
+        ExecutionPlanner.onSignal(SignalType.SELL, holding().copy(netPnlPct = pct), candle, m, ex)
+
+    @Test fun minMax_profitBelowMinimum_sellIgnored() =
+        assertTrue(sellAt(2.0, minMax).single() is Action.Skip)
+
+    @Test fun minMax_profitAtOrAboveMinimum_sells() {
+        assertTrue(sellAt(3.0, minMax).last() is Action.MarketSellAll)
+        assertTrue(sellAt(4.5, minMax).last() is Action.MarketSellAll)
+    }
+
+    @Test fun minMax_smallLoss_sellIgnored() {
+        assertTrue(sellAt(-1.2, minMax).single() is Action.Skip)
+        assertTrue(sellAt(0.0, minMax).single() is Action.Skip)
+    }
+
+    @Test fun minMax_lossBeyondMaximum_sells() {
+        assertTrue(sellAt(-2.0, minMax).last() is Action.MarketSellAll)
+        assertTrue(sellAt(-5.0, minMax).last() is Action.MarketSellAll)
+    }
+
+    @Test fun minMax_off_sellFollowsSignalAlways() =
+        assertTrue(sellAt(0.5, taker).last() is Action.MarketSellAll)
+
+    @Test fun minMax_neverTriggersExitsOnItsOwn() {
+        val c = holding().copy(netPnlPct = 50.0)
+        assertTrue(ExecutionPlanner.onTick(c, market(1_500_000_000), minMax).isEmpty())
+        assertTrue(ExecutionPlanner.onTick(c.copy(netPnlPct = -40.0), market(500_000_000), minMax).isEmpty())
+    }
+
     // ---- maker, ticks
     @Test fun maker_chaseCancel_whenPriceRises5PercentAndNothingFilled() {
         val c = holding(0.0, "b", held = 0)

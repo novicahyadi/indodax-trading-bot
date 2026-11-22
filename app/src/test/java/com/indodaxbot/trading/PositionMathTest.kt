@@ -121,4 +121,18 @@ class PositionMathTest {
         val s = twoBuys()
         assertEquals(10.0, PositionMath.pnlPercent(10_553_550L, s), 0.01)
     }
+
+    @Test
+    fun breakEvenPrice_coversBothFees() {
+        val sats = 84_088L
+        val price = 1_183_182_000L
+        val fee = Money.fee(Money.cost(price, sats), 51)
+        val s = PositionMath.applyBuy(PositionState(targetQtySats = sats), price, sats, fee)
+        val be = PositionMath.breakEvenPrice(s, 51)!!
+        // Just above the entry by about 1.02% (two fees), never below the entry.
+        assertEquals(true, be > price * 1010 / 1000 && be < price * 1012 / 1000)
+        assertEquals(true, PositionMath.unrealized(s, be, 51) >= 0)
+        assertEquals(true, PositionMath.unrealized(s, be - 1_000_000, 51) < 0)
+        assertEquals(null, PositionMath.breakEvenPrice(PositionState(targetQtySats = 1), 51))
+    }
 }

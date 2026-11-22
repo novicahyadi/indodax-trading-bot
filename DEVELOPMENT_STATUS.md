@@ -26,6 +26,13 @@ Decisions and limits (read these):
 9. The engine itself is not covered by unit tests (it needs a database and network); the planner and the portfolio math are.
 10. Needs a real-device check: notification permission prompt, service survival on MIUI with the guide applied, and whether 5m candles exist on Indodax.
 
+## Fees setting and taker min-TP / max-SL (2026-11-22, NOT yet compiled)
+- Settings > Execution has "Trading fees (%)": maker and taker, separately for BUY and SELL (4 values, 0-5 %). Stored in StrategyStore, read by the paper broker on every order; the sell-side taker fee is used for P/L estimates. They will apply to live trading later. Defaults are still the unverified placeholders 0.30 % maker / 0.51 % taker.
+- Market taker: new option "Minimum take profit and maximum stop loss", mutually exclusive with "Use stop loss and take profit" (UI switches the other off; the validator rejects both). It only gates SELL signals: a SELL is executed only if net P/L (after fees, same % as the Positions screen) is >= +min TP or <= -max SL; otherwise the SELL signal is ignored and the position is held. It never sells on its own, and BUY signals are unaffected. Risk: if price stays between the two limits, the position stays open however many SELL signals come.
+
+## Paper P/L fix (2026-11-22)
+User report: positions showed a loss although the price was above the entry, and the portfolio total P/L (-182) disagreed with the open position (-5,281). Cause 1 was NOT a bug: with placeholder fees (0.51% taker on both buy and sell) a round trip costs about 1.02%, so a price move smaller than that is a loss (checked by hand: -5,139 at bid 1,189,170,000). Cause 2 WAS a bug: portfolio equity valued BTC at the bid without the estimated sell fee, while unrealized P/L deducted it. Equity is now net of the estimated sell fee, so total P/L = realized + unrealized (unit-tested). Positions screen now shows a Break-even price for open positions and no longer shows the live price on closed ones. The real Indodax fee rates are still UNVERIFIED (the docs page I could reach lists none): compare with a real trade history before trusting paper P/L.
+
 ## Strategy rework: normalized 0-100 indicator, dual signal (written 2026-11-15, NOT yet compiled)
 Replaces the raw +/- zones (invalid across coins with different price scales).
 - Indicator: MACD and signal line are scaled to 0-100 over a rolling window of `norm_lookback` candles (highest/lowest over both lines; range 0 gives 50/50). Closed candles only.
