@@ -311,6 +311,8 @@ private fun StrategyTab(strategyStore: StrategyStore) {
 
             SwitchRow("Enable reversal signal in zone strategy", enRev) { enRev = it }
             if (enRev) {
+                HorizontalDivider()
+                Text("SELL Strategy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 TintBox(SellTint) {
                     Text("Zona SELL (0-100)", style = MaterialTheme.typography.labelLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -318,19 +320,6 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                         DecField("Sell max", sellMax, { sellMax = it }, Modifier.weight(1f))
                     }
                 }
-                TintBox(BuyTint) {
-                    Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
-                        DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
-                    }
-                }
-                DecField("Buy reversal threshold", buyThr, { buyThr = it }, Modifier.fillMaxWidth())
-                Text(
-                    "Minimum bounce up of the signal line (0-100 scale) before a BUY.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Text("Sell trigger", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -356,6 +345,21 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                Text("BUY Strategy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                TintBox(BuyTint) {
+                    Text("Zona BUY (0-100)", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DecField("Buy min", buyMin, { buyMin = it }, Modifier.weight(1f))
+                        DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
+                    }
+                }
+                DecField("Buy reversal threshold", buyThr, { buyThr = it }, Modifier.fillMaxWidth())
+                Text(
+                    "Minimum bounce up of the signal line (0-100 scale) before a BUY.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             HorizontalDivider()
@@ -454,80 +458,89 @@ private fun ExecutionTab(strategyStore: StrategyStore) {
             "Used by the bot in PAPER mode (simulated orders). Live orders are not enabled yet.",
             style = MaterialTheme.typography.bodySmall
         )
-        IntField("Order size per BUY (IDR)", orderSize, { orderSize = it }, Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = mode == ExecutionMode.MARKET_MAKER,
-                onClick = { mode = ExecutionMode.MARKET_MAKER }, label = { Text("Market maker") }
-            )
-            FilterChip(
-                selected = mode == ExecutionMode.MARKET_TAKER,
-                onClick = { mode = ExecutionMode.MARKET_TAKER }, label = { Text("Market taker") }
-            )
+        SectionCard {
+            Text("Trade Sizing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            IntField("Order size per BUY (IDR)", orderSize, { orderSize = it }, Modifier.fillMaxWidth())
         }
 
-        if (mode == ExecutionMode.MARKET_MAKER) {
-            Text("Market maker (limit orders)", style = MaterialTheme.typography.titleMedium)
-            DecField("Chase-cancel % (price rises above the unfilled limit buy)", chase, { chase = it }, Modifier.fillMaxWidth())
+        SectionCard {
+            Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DecField("Stop loss %", mSl, { mSl = it }, Modifier.weight(1f))
-                DecField("Take profit %", mTp, { mTp = it }, Modifier.weight(1f))
+                FilterChip(
+                    selected = mode == ExecutionMode.MARKET_MAKER,
+                    onClick = { mode = ExecutionMode.MARKET_MAKER }, label = { Text("Market maker") }
+                )
+                FilterChip(
+                    selected = mode == ExecutionMode.MARKET_TAKER,
+                    onClick = { mode = ExecutionMode.MARKET_TAKER }, label = { Text("Market taker") }
+                )
             }
-            Text("Stop-loss steps (% of the order filled)", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IntField("Level 1", l1, { l1 = it }, Modifier.weight(1f))
-                IntField("Level 2", l2, { l2 = it }, Modifier.weight(1f))
-                IntField("Level 3", l3, { l3 = it }, Modifier.weight(1f))
-            }
-            Text("Level 4 is automatic at 100 % filled.", style = MaterialTheme.typography.bodySmall)
-        } else {
-            Text("Market taker (market orders)", style = MaterialTheme.typography.titleMedium)
-            SwitchRow("Use stop loss and take profit", useSlTp) {
-                useSlTp = it
-                if (it) useMinMax = false     // the two options exclude each other
-            }
-            Text(
-                "OFF: hold until a SELL signal, no stop loss and no take profit.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (useSlTp) {
+
+
+            if (mode == ExecutionMode.MARKET_MAKER) {
+                Text("Market maker (limit orders)", style = MaterialTheme.typography.bodyMedium)
+                DecField("Chase-cancel % (price rises above the unfilled limit buy)", chase, { chase = it }, Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecField("Stop loss %", tSl, { tSl = it }, Modifier.weight(1f))
-                    DecField("Take profit %", tTp, { tTp = it }, Modifier.weight(1f))
+                    DecField("Stop loss %", mSl, { mSl = it }, Modifier.weight(1f))
+                    DecField("Take profit %", mTp, { mTp = it }, Modifier.weight(1f))
                 }
-            }
-            HorizontalDivider()
-            SwitchRow("Minimum take profit and maximum stop loss", useMinMax) {
-                useMinMax = it
-                if (it) useSlTp = false       // the two options exclude each other
-            }
-            Text(
-                "Trades still follow the signals. A SELL signal is only obeyed when the position is at least the minimum take profit in profit, or at least the maximum stop loss in loss. In between, the SELL signal is ignored and the position is held. P/L is measured after fees, as on the Positions screen. Cannot be combined with the option above.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (useMinMax) {
+                Text("Stop-loss steps (% of the order filled)", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecField("Minimum take profit %", minTp, { minTp = it }, Modifier.weight(1f))
-                    DecField("Maximum stop loss %", maxSl, { maxSl = it }, Modifier.weight(1f))
+                    IntField("Level 1", l1, { l1 = it }, Modifier.weight(1f))
+                    IntField("Level 2", l2, { l2 = it }, Modifier.weight(1f))
+                    IntField("Level 3", l3, { l3 = it }, Modifier.weight(1f))
+                }
+                Text("Level 4 is automatic at 100 % filled.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Market taker (market orders)", style = MaterialTheme.typography.bodyMedium)
+                SwitchRow("Use stop loss and take profit", useSlTp) {
+                    useSlTp = it
+                    if (it) useMinMax = false     // the two options exclude each other
+                }
+                Text(
+                    "OFF: hold until a SELL signal, no stop loss and no take profit.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (useSlTp) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DecField("Stop loss %", tSl, { tSl = it }, Modifier.weight(1f))
+                        DecField("Take profit %", tTp, { tTp = it }, Modifier.weight(1f))
+                    }
+                }
+                HorizontalDivider()
+                SwitchRow("Minimum take profit and maximum stop loss", useMinMax) {
+                    useMinMax = it
+                    if (it) useSlTp = false       // the two options exclude each other
+                }
+                Text(
+                    "Trades still follow the signals. A SELL signal is only obeyed when the position is at least the minimum take profit in profit, or at least the maximum stop loss in loss. In between, the SELL signal is ignored and the position is held. P/L is measured after fees, as on the Positions screen. Cannot be combined with the option above.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (useMinMax) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DecField("Minimum take profit %", minTp, { minTp = it }, Modifier.weight(1f))
+                        DecField("Maximum stop loss %", maxSl, { maxSl = it }, Modifier.weight(1f))
+                    }
                 }
             }
         }
 
-        HorizontalDivider()
-        Text("Trading fees (%)", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Used for paper trading now and for live P/L estimates later. Check your real rates in your Indodax trade history.",
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text("Buy", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DecField("Maker (limit)", fMakerBuy, { fMakerBuy = it }, Modifier.weight(1f))
-            DecField("Taker (market)", fTakerBuy, { fTakerBuy = it }, Modifier.weight(1f))
-        }
-        Text("Sell", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DecField("Maker (limit)", fMakerSell, { fMakerSell = it }, Modifier.weight(1f))
-            DecField("Taker (market)", fTakerSell, { fTakerSell = it }, Modifier.weight(1f))
+        SectionCard {
+            Text("Trading fees (%)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Used for paper trading now and for live P/L estimates later. Check your real rates in your Indodax trade history.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text("Buy", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DecField("Maker (limit)", fMakerBuy, { fMakerBuy = it }, Modifier.weight(1f))
+                DecField("Taker (market)", fTakerBuy, { fTakerBuy = it }, Modifier.weight(1f))
+            }
+            Text("Sell", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DecField("Maker (limit)", fMakerSell, { fMakerSell = it }, Modifier.weight(1f))
+                DecField("Taker (market)", fTakerSell, { fTakerSell = it }, Modifier.weight(1f))
+            }
         }
 
         Button(

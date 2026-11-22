@@ -26,6 +26,9 @@ Decisions and limits (read these):
 9. The engine itself is not covered by unit tests (it needs a database and network); the planner and the portfolio math are.
 10. Needs a real-device check: notification permission prompt, service survival on MIUI with the guide applied, and whether 5m candles exist on Indodax.
 
+## Settings layout (2026-11-22, NOT yet compiled)
+Strategy tab: the reversal options are grouped into a SELL Strategy block (zone, sell trigger, sell threshold) and a BUY Strategy block (zone, buy threshold). Execution tab: cards for Trade Sizing, Mode (maker/taker options) and Trading fees. Layout only, no logic change.
+
 ## Separate reversal thresholds + sell trigger (2026-11-22, NOT yet compiled)
 - The single reversal threshold is split into a BUY and a SELL threshold (the old saved value becomes the default for both).
 - New "Sell trigger": ONCE_TOUCHING fires SELL on the candle where the signal line first reaches the sell zone from below (previous value below the zone minimum, current at or above it), once per approach, no threshold needed (field hidden). WAIT_REVERSAL is the previous behaviour (reversal inside the zone, with the SELL threshold). Default WAIT_REVERSAL.
