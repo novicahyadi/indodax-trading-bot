@@ -26,6 +26,11 @@ Decisions and limits (read these):
 9. The engine itself is not covered by unit tests (it needs a database and network); the planner and the portfolio math are.
 10. Needs a real-device check: notification permission prompt, service survival on MIUI with the guide applied, and whether 5m candles exist on Indodax.
 
+## Separate reversal thresholds + sell trigger (2026-11-22, NOT yet compiled)
+- The single reversal threshold is split into a BUY and a SELL threshold (the old saved value becomes the default for both).
+- New "Sell trigger": ONCE_TOUCHING fires SELL on the candle where the signal line first reaches the sell zone from below (previous value below the zone minimum, current at or above it), once per approach, no threshold needed (field hidden). WAIT_REVERSAL is the previous behaviour (reversal inside the zone, with the SELL threshold). Default WAIT_REVERSAL.
+- Not covered: a line that is already inside the zone when the bot starts gives no ONCE_TOUCHING signal until it leaves and re-enters.
+
 ## Fees setting and taker min-TP / max-SL (2026-11-22, NOT yet compiled)
 - Settings > Execution has "Trading fees (%)": maker and taker, separately for BUY and SELL (4 values, 0-5 %). Stored in StrategyStore, read by the paper broker on every order; the sell-side taker fee is used for P/L estimates. They will apply to live trading later. Defaults are still the unverified placeholders 0.30 % maker / 0.51 % taker.
 - Market taker: new option "Minimum take profit and maximum stop loss", mutually exclusive with "Use stop loss and take profit" (UI switches the other off; the validator rejects both). It only gates SELL signals: a SELL is executed only if net P/L (after fees, same % as the Positions screen) is >= +min TP or <= -max SL; otherwise the SELL signal is ignored and the position is held. It never sells on its own, and BUY signals are unaffected. Risk: if price stays between the two limits, the position stays open however many SELL signals come.

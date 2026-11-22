@@ -43,7 +43,8 @@ class StrategyStore(context: Context) {
             .putInt(K_LOOKBACK, c.normLookback)
             .putString(K_BUY_MIN, c.buyZoneMin.toString()).putString(K_BUY_MAX, c.buyZoneMax.toString())
             .putString(K_SELL_MIN, c.sellZoneMin.toString()).putString(K_SELL_MAX, c.sellZoneMax.toString())
-            .putBoolean(K_EN_REV, c.enableReversal).putString(K_REV_THR, c.reversalThreshold.toString())
+            .putBoolean(K_EN_REV, c.enableReversal).putString(K_BUY_THR, c.buyReversalThreshold.toString())
+            .putString(K_SELL_TRIGGER, c.sellTrigger.name).putString(K_SELL_THR, c.sellReversalThreshold.toString())
             .putBoolean(K_EN_CROSS, c.enableCrossover).putString(K_ANGLE, c.minCrossoverAngle.toString())
             .putString(K_LOGIC, c.logicMode.name)
             .apply()
@@ -90,7 +91,14 @@ class StrategyStore(context: Context) {
             buyZoneMin = dbl(K_BUY_MIN, d.buyZoneMin), buyZoneMax = dbl(K_BUY_MAX, d.buyZoneMax),
             sellZoneMin = dbl(K_SELL_MIN, d.sellZoneMin), sellZoneMax = dbl(K_SELL_MAX, d.sellZoneMax),
             enableReversal = prefs.getBoolean(K_EN_REV, d.enableReversal),
-            reversalThreshold = dbl(K_REV_THR, d.reversalThreshold),
+            // The old single threshold (reversal_threshold) becomes the default for both sides.
+            buyReversalThreshold = dbl(K_BUY_THR, dbl(K_REV_THR, d.buyReversalThreshold)),
+            sellTrigger = try {
+                SellTrigger.valueOf(prefs.getString(K_SELL_TRIGGER, null) ?: d.sellTrigger.name)
+            } catch (e: IllegalArgumentException) {
+                d.sellTrigger
+            },
+            sellReversalThreshold = dbl(K_SELL_THR, dbl(K_REV_THR, d.sellReversalThreshold)),
             enableCrossover = prefs.getBoolean(K_EN_CROSS, d.enableCrossover),
             minCrossoverAngle = dbl(K_ANGLE, d.minCrossoverAngle),
             logicMode = logic
@@ -99,7 +107,7 @@ class StrategyStore(context: Context) {
         val err = StrategyValidator.validate(
             loaded.macd.fast, loaded.macd.slow, loaded.macd.signal, loaded.normLookback,
             loaded.buyZoneMin, loaded.buyZoneMax, loaded.sellZoneMin, loaded.sellZoneMax,
-            loaded.reversalThreshold, loaded.minCrossoverAngle, loaded.enableReversal, loaded.enableCrossover
+            loaded.buyReversalThreshold, loaded.sellReversalThreshold, loaded.sellTrigger, loaded.minCrossoverAngle, loaded.enableReversal, loaded.enableCrossover
         )
         return if (err == null) loaded else d.copy(timeframe = loaded.timeframe)
     }
@@ -147,7 +155,10 @@ class StrategyStore(context: Context) {
         const val K_SELL_MIN = "sell_zone_min"
         const val K_SELL_MAX = "sell_zone_max"
         const val K_EN_REV = "enable_reversal_signal"
-        const val K_REV_THR = "reversal_threshold"
+        const val K_REV_THR = "reversal_threshold"   // legacy single threshold, only read as a fallback
+        const val K_BUY_THR = "buy_reversal_threshold"
+        const val K_SELL_THR = "sell_reversal_threshold"
+        const val K_SELL_TRIGGER = "sell_trigger_mode"
         const val K_EN_CROSS = "enable_crossover_signal"
         const val K_ANGLE = "min_crossover_angle"
         const val K_LOGIC = "signal_logic_mode"

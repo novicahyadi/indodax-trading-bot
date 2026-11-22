@@ -18,6 +18,13 @@ object Timeframes {
 /** How the two strategies are combined when both are switched on. */
 enum class LogicMode { AND, OR }
 
+/**
+ * How the SELL side of the reversal strategy fires.
+ * ONCE_TOUCHING: on the candle where the signal line first reaches the sell zone.
+ * WAIT_REVERSAL: only after the line has reversed downward inside the zone (needs a threshold).
+ */
+enum class SellTrigger { ONCE_TOUCHING, WAIT_REVERSAL }
+
 enum class ExecutionMode { MARKET_MAKER, MARKET_TAKER }
 
 /**
@@ -33,7 +40,9 @@ data class StrategyConfig(
     val sellZoneMin: Double = 80.0,
     val sellZoneMax: Double = 100.0,
     val enableReversal: Boolean = true,
-    val reversalThreshold: Double = 0.0,
+    val buyReversalThreshold: Double = 0.0,
+    val sellTrigger: SellTrigger = SellTrigger.WAIT_REVERSAL,
+    val sellReversalThreshold: Double = 0.0,
     val enableCrossover: Boolean = true,
     val minCrossoverAngle: Double = 15.0,
     val logicMode: LogicMode = LogicMode.OR
@@ -42,7 +51,7 @@ data class StrategyConfig(
     fun key(): String =
         "$timeframe|${macd.fast}-${macd.slow}-${macd.signal}|$normLookback|" +
             "$buyZoneMin-$buyZoneMax|$sellZoneMin-$sellZoneMax|" +
-            "$enableReversal:$reversalThreshold|$enableCrossover:$minCrossoverAngle|$logicMode"
+            "$enableReversal:$buyReversalThreshold:$sellTrigger:$sellReversalThreshold|$enableCrossover:$minCrossoverAngle|$logicMode"
 
     val anyEnabled: Boolean get() = enableReversal || enableCrossover
 
@@ -80,7 +89,7 @@ object StrategyValidator {
     fun validate(
         fast: Int?, slow: Int?, signal: Int?, lookback: Int?,
         buyMin: Double?, buyMax: Double?, sellMin: Double?, sellMax: Double?,
-        reversalThreshold: Double?, minAngle: Double?,
+        buyThreshold: Double?, sellThreshold: Double?, sellTrigger: SellTrigger, minAngle: Double?,
         enableReversal: Boolean, enableCrossover: Boolean
     ): String? {
         if (fast == null || fast !in 2..99) return "Fast EMA must be a whole number from 2 to 99"
@@ -99,8 +108,13 @@ object StrategyValidator {
             if (buyMin >= buyMax) return "Buy zone: minimum must be lower than maximum"
             if (sellMin >= sellMax) return "Sell zone: minimum must be lower than maximum"
             if (buyMax >= sellMin) return "Buy zone must stay below the sell zone"
-            if (reversalThreshold == null || !reversalThreshold.isFinite() || reversalThreshold < 0.0 || reversalThreshold > 100.0) {
-                return "Reversal threshold must be from 0 to 100"
+            if (buyThreshold == null || !buyThreshold.isFinite() || buyThreshold < 0.0 || buyThreshold > 100.0) {
+                return "Buy reversal threshold must be from 0 to 100"
+            }
+            if (sellTrigger == SellTrigger.WAIT_REVERSAL &&
+                (sellThreshold == null || !sellThreshold.isFinite() || sellThreshold < 0.0 || sellThreshold > 100.0)
+            ) {
+                return "Sell reversal threshold must be from 0 to 100"
             }
         }
         if (enableCrossover) {

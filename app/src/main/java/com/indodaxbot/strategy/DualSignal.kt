@@ -16,8 +16,13 @@ object DualSignal {
         val s0 = n[i].signalNorm
         fun inBuy(v: Double) = v >= cfg.buyZoneMin && v <= cfg.buyZoneMax
         fun inSell(v: Double) = v >= cfg.sellZoneMin && v <= cfg.sellZoneMax
-        val buy = (inBuy(s1) || inBuy(s0)) && s1 <= s2 && (s0 - s1) > cfg.reversalThreshold
-        val sell = (inSell(s1) || inSell(s0)) && s1 >= s2 && (s1 - s0) > cfg.reversalThreshold
+        val buy = (inBuy(s1) || inBuy(s0)) && s1 <= s2 && (s0 - s1) > cfg.buyReversalThreshold
+        val sell = when (cfg.sellTrigger) {
+            // Fires once, on the candle where the line first reaches the sell zone from below.
+            SellTrigger.ONCE_TOUCHING -> s1 < cfg.sellZoneMin && s0 >= cfg.sellZoneMin
+            SellTrigger.WAIT_REVERSAL ->
+                (inSell(s1) || inSell(s0)) && s1 >= s2 && (s1 - s0) > cfg.sellReversalThreshold
+        }
         return when {
             buy && !sell -> SignalType.BUY
             sell && !buy -> SignalType.SELL

@@ -53,6 +53,7 @@ import com.indodaxbot.strategy.ExecutionConfig
 import com.indodaxbot.strategy.ExecutionMode
 import com.indodaxbot.strategy.LogicMode
 import com.indodaxbot.strategy.MacdParams
+import com.indodaxbot.strategy.SellTrigger
 import com.indodaxbot.strategy.StrategyConfig
 import com.indodaxbot.strategy.StrategyStore
 import com.indodaxbot.strategy.StrategyValidator
@@ -255,7 +256,9 @@ private fun StrategyTab(strategyStore: StrategyStore) {
     var buyMin by remember(cfg) { mutableStateOf(fmt(cfg.buyZoneMin)) }
     var buyMax by remember(cfg) { mutableStateOf(fmt(cfg.buyZoneMax)) }
     var enRev by remember(cfg) { mutableStateOf(cfg.enableReversal) }
-    var revThr by remember(cfg) { mutableStateOf(fmt(cfg.reversalThreshold)) }
+    var buyThr by remember(cfg) { mutableStateOf(fmt(cfg.buyReversalThreshold)) }
+    var sellThr by remember(cfg) { mutableStateOf(fmt(cfg.sellReversalThreshold)) }
+    var sellTrigger by remember(cfg) { mutableStateOf(cfg.sellTrigger) }
     var enCross by remember(cfg) { mutableStateOf(cfg.enableCrossover) }
     var angle by remember(cfg) { mutableStateOf(fmt(cfg.minCrossoverAngle)) }
     var logic by remember(cfg) { mutableStateOf(cfg.logicMode) }
@@ -322,12 +325,37 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                         DecField("Buy max", buyMax, { buyMax = it }, Modifier.weight(1f))
                     }
                 }
-                DecField("Reversal threshold", revThr, { revThr = it }, Modifier.fillMaxWidth())
+                DecField("Buy reversal threshold", buyThr, { buyThr = it }, Modifier.fillMaxWidth())
                 Text(
-                    "Minimum bounce of the signal line (0-100 scale) after touching a zone.",
+                    "Minimum bounce up of the signal line (0-100 scale) before a BUY.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Text("Sell trigger", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = sellTrigger == SellTrigger.ONCE_TOUCHING,
+                        onClick = { sellTrigger = SellTrigger.ONCE_TOUCHING }, label = { Text("Once touching") }
+                    )
+                    FilterChip(
+                        selected = sellTrigger == SellTrigger.WAIT_REVERSAL,
+                        onClick = { sellTrigger = SellTrigger.WAIT_REVERSAL }, label = { Text("Waiting for reversal") }
+                    )
+                }
+                if (sellTrigger == SellTrigger.WAIT_REVERSAL) {
+                    DecField("Sell reversal threshold", sellThr, { sellThr = it }, Modifier.fillMaxWidth())
+                    Text(
+                        "Minimum bounce down of the signal line (0-100 scale) before a SELL.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        "SELL fires on the candle where the signal line first reaches the sell zone, without waiting for a reversal.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -370,9 +398,10 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                 val bMax = if (enRev) buyMax.toDoubleOrNull() else cfg.buyZoneMax
                 val sMin = if (enRev) sellMin.toDoubleOrNull() else cfg.sellZoneMin
                 val sMax = if (enRev) sellMax.toDoubleOrNull() else cfg.sellZoneMax
-                val thr = if (enRev) revThr.toDoubleOrNull() else cfg.reversalThreshold
+                val bThr = if (enRev) buyThr.toDoubleOrNull() else cfg.buyReversalThreshold
+                val sThr = if (enRev) sellThr.toDoubleOrNull() ?: (if (sellTrigger == SellTrigger.ONCE_TOUCHING) cfg.sellReversalThreshold else null) else cfg.sellReversalThreshold
                 val ang = if (enCross) angle.toDoubleOrNull() else cfg.minCrossoverAngle
-                val err = StrategyValidator.validate(f, sl, sg, lb, bMin, bMax, sMin, sMax, thr, ang, enRev, enCross)
+                val err = StrategyValidator.validate(f, sl, sg, lb, bMin, bMax, sMin, sMax, bThr, sThr, sellTrigger, ang, enRev, enCross)
                 if (err != null) {
                     indicatorOpen = true   // the error may be about a field inside the collapsed card
                     msg = err
@@ -381,7 +410,8 @@ private fun StrategyTab(strategyStore: StrategyStore) {
                         StrategyConfig(
                             timeframe = tf, macd = MacdParams(f!!, sl!!, sg!!), normLookback = lb!!,
                             buyZoneMin = bMin!!, buyZoneMax = bMax!!, sellZoneMin = sMin!!, sellZoneMax = sMax!!,
-                            enableReversal = enRev, reversalThreshold = thr!!,
+                            enableReversal = enRev, buyReversalThreshold = bThr!!,
+                            sellTrigger = sellTrigger, sellReversalThreshold = sThr ?: cfg.sellReversalThreshold,
                             enableCrossover = enCross, minCrossoverAngle = ang!!, logicMode = logic
                         )
                     )

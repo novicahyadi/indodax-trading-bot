@@ -22,7 +22,7 @@ class StrategyTest {
         assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(50.0, 45.0, 48.0), 2, cfg))
 
     @Test fun reversal_thresholdIsStrict() {
-        val c = cfg.copy(reversalThreshold = 3.0)
+        val c = cfg.copy(buyReversalThreshold = 3.0)
         assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.0), 2, c))
         assertEquals(SignalType.BUY, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.1), 2, c))
     }
@@ -114,10 +114,42 @@ class StrategyTest {
     private fun v(
         fast: Int? = 12, slow: Int? = 26, sig: Int? = 9, lb: Int? = 50,
         bMin: Double? = 0.0, bMax: Double? = 20.0, sMin: Double? = 80.0, sMax: Double? = 100.0,
-        thr: Double? = 0.0, ang: Double? = 15.0, rev: Boolean = true, cross: Boolean = true
-    ) = StrategyValidator.validate(fast, slow, sig, lb, bMin, bMax, sMin, sMax, thr, ang, rev, cross)
+        thr: Double? = 0.0, sthr: Double? = 0.0, trig: SellTrigger = SellTrigger.WAIT_REVERSAL,
+        ang: Double? = 15.0, rev: Boolean = true, cross: Boolean = true
+    ) = StrategyValidator.validate(fast, slow, sig, lb, bMin, bMax, sMin, sMax, thr, sthr, trig, ang, rev, cross)
 
     @Test fun validator_acceptsDefaults() = assertNull(v())
+
+    @Test fun validator_sellThresholdOnlyNeededWhenWaitingForReversal() {
+        assertNotNull(v(sthr = null))                                    // WAIT_REVERSAL needs it
+        assertNotNull(v(sthr = -1.0))
+        assertNull(v(sthr = null, trig = SellTrigger.ONCE_TOUCHING))     // not used, not checked
+        assertNotNull(v(thr = null, trig = SellTrigger.ONCE_TOUCHING))   // buy threshold always needed
+    }
+
+    // ---- Sell trigger: once touching vs waiting for reversal
+    private val once = cfg.copy(sellTrigger = SellTrigger.ONCE_TOUCHING)
+
+    @Test fun onceTouching_firesOnFirstReachOfSellZone() =
+        assertEquals(SignalType.SELL, DualSignal.reversalAt(sigSeries(70.0, 78.0, 82.0), 2, once))
+
+    @Test fun onceTouching_doesNotRepeatWhileInsideZone() =
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(78.0, 82.0, 90.0), 2, once))
+
+    @Test fun onceTouching_notFiredBelowZone() =
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(60.0, 70.0, 75.0), 2, once))
+
+    @Test fun onceTouching_whileWaitingModeStillNeedsReversal() =
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(70.0, 78.0, 82.0), 2, cfg))
+
+    @Test fun sellThreshold_isIndependentFromBuyThreshold() {
+        val c = cfg.copy(buyReversalThreshold = 5.0, sellReversalThreshold = 1.0)
+        assertEquals(SignalType.SELL, DualSignal.reversalAt(sigSeries(90.0, 95.0, 93.5), 2, c))   // drop 1.5 > 1
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.0), 2, c))     // rise 3 <= 5
+        val c2 = cfg.copy(buyReversalThreshold = 1.0, sellReversalThreshold = 5.0)
+        assertEquals(SignalType.BUY, DualSignal.reversalAt(sigSeries(10.0, 5.0, 8.0), 2, c2))
+        assertEquals(SignalType.HOLD, DualSignal.reversalAt(sigSeries(90.0, 95.0, 93.5), 2, c2))
+    }
 
     @Test fun validator_rejectsBadValues() {
         assertNotNull(v(fast = 26, slow = 12))
